@@ -5,6 +5,8 @@ import (
 	"math"
 )
 
+// Demonstrate how a slice capacity will change
+// as more elements are appended to it.
 func main() {
 	var data []int
 

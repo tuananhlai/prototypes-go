@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Account Login</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+      .main {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .loginFormRoot {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .loginFormRoot label {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const App = () => {
+        return (
+          <main className="main">
+            <AccountSelector accounts={[]} onSelectAccount={console.log} />
+            <AddAccountButton onAddAccount={console.log} />
+          </main>
+        );
+      };
+
+      const AccountSelector = (props) => {
+        const { accounts, onSelectAccount } = props;
+
+        return (
+          <select>
+            <option disabled selected>Select an account</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+        );
+      };
+
+      const AddAccountButton = (props) => {
+        const { onAddAccount } = props;
+
+        const [isOpen, setIsOpen] = React.useState(false);
+
+        const openDialog = () => setIsOpen(true);
+        const closeDialog = () => setIsOpen(false);
+
+        const addAccount = (data) => {
+          closeDialog();
+          onAddAccount(data);
+        };
+
+        return (
+          <>
+            <button onClick={openDialog}>Add Account</button>
+            <dialog open={isOpen}>
+              <button onClick={closeDialog}>Close</button>
+              <LoginForm onSubmit={addAccount} />
+            </dialog>
+          </>
+        );
+      };
+
+      const LoginForm = (props) => {
+        const { onSubmit } = props;
+
+        const submit = (e) => {
+          e.preventDefault();
+
+          const fd = new FormData(e.target);
+          const username = fd.get("username");
+          const password = fd.get("password");
+
+          onSubmit({ username, password });
+        };
+
+        return (
+          <form className="loginFormRoot" onSubmit={submit}>
+            <label>
+              Username
+              <input type="text" name="username" />
+            </label>
+            <label>
+              Password
+              <input type="password" name="password" />
+            </label>
+            <button type="submit">Login</button>
+          </form>
+        );
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
+    </script>
+  </body>
+</html>

@@ -91,6 +91,8 @@ func loginHandler(userRepo *UserRepository, sessionRepo *SessionRepository) http
 			Name:     "session_id",
 			Value:    sessionID,
 			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteStrictMode,
 		})
 
 		res := LoginResponseDTO{
@@ -103,8 +105,8 @@ func loginHandler(userRepo *UserRepository, sessionRepo *SessionRepository) http
 	}
 }
 
-func AddUserToContext(ctx context.Context, user *User) context.Context {
-	return context.WithValue(ctx, userContextKey, user)
+func CreateRequestWithUser(base *http.Request, user *User) *http.Request {
+	return base.WithContext(context.WithValue(base.Context(), userContextKey, user))
 }
 
 func GetRequestUser(r *http.Request) (*User, error) {
@@ -149,7 +151,6 @@ func (am *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := AddUserToContext(r.Context(), user)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, CreateRequestWithUser(r, user))
 	})
 }

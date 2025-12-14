@@ -13,6 +13,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const (
+	redisAddr = "localhost:6379"
+)
+
 func main() {
 	var port int
 	flag.IntVar(&port, "p", 8080, "port to listen on")
@@ -21,7 +25,7 @@ func main() {
 	globalCtx := context.Background()
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: redisAddr,
 	})
 	broadcastService := NewBroadcastService()
 	broadcastController := NewBroadcastController(broadcastService, rdb)
@@ -86,6 +90,9 @@ func (b *BroadcastController) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// StartSubscriber begins a Redis subscription, which will broadcast the message
+// received from Redis to all WebSocket clients currently connecting to
+// this server.
 func (b *BroadcastController) StartSubscriber(ctx context.Context) {
 	pubsub := b.rdb.Subscribe(ctx, b.redisChannelName)
 	defer pubsub.Close()
@@ -101,10 +108,13 @@ func (b *BroadcastController) StartSubscriber(ctx context.Context) {
 	}
 }
 
+// publishMessage sends a message to Redis pubsub channel, so that it can be broadcasted
+// to connections owned by other WebSocket servers as well.
 func (b *BroadcastController) publishMessage(ctx context.Context, msg string) error {
 	return b.rdb.Publish(ctx, b.redisChannelName, msg).Err()
 }
 
+// BroadcastService sends messages through WebSocket to registered connections.
 type BroadcastService struct {
 	connections []*websocket.Conn
 	mux         sync.RWMutex
@@ -134,6 +144,8 @@ func (s *BroadcastService) RemoveConnection(conn *websocket.Conn) error {
 	return conn.Close()
 }
 
+// Broadcast sends the given message to all registered connections.
+// Return error when a message fails to send.
 func (s *BroadcastService) Broadcast(message []byte) error {
 	s.mux.RLock()
 	defer s.mux.RUnlock()

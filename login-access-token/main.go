@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	addr        = ":8080"
-	keyFilePath = "key.pem"
+	addr            = ":8080"
+	keyFilePath     = "key.pem"
+	tokenCookieName = "token"
 )
 
 func main() {
@@ -27,7 +28,7 @@ func main() {
 	}
 
 	userRepo := NewUserRepository()
-	tokenFactory := NewAuthTokenFactory(privateKey)
+	tokenFactory := NewAuthTokenService(privateKey)
 
 	mux.HandleFunc("POST /login", loginHandler(userRepo, tokenFactory))
 
@@ -46,10 +47,9 @@ type LoginResponseDTO struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
 	Name     string `json:"name"`
-	Token    string `json:"token"`
 }
 
-func loginHandler(userRepo *UserRepository, tokenFactory *AuthTokenFactory) http.HandlerFunc {
+func loginHandler(userRepo *UserRepository, tokenFactory *AuthTokenService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var loginReqDTO LoginRequestDTO
 		if err := json.NewDecoder(r.Body).Decode(&loginReqDTO); err != nil {
@@ -74,24 +74,32 @@ func loginHandler(userRepo *UserRepository, tokenFactory *AuthTokenFactory) http
 			ID:       user.ID,
 			Username: user.Username,
 			Name:     user.Name,
-			Token:    token,
 		}
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     tokenCookieName,
+			Value:    token,
+			HttpOnly: true,
+			Secure:   true,
+		})
 
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(loginResDTO)
 	}
 }
 
-type AuthTokenFactory struct {
-	key *ecdsa.PrivateKey
+// AuthTokenService creates and verifies JWT tokens for authentication.
+type AuthTokenService struct {
+	key           *ecdsa.PrivateKey
+	signingMethod jwt.SigningMethod
 }
 
-func NewAuthTokenFactory(key *ecdsa.PrivateKey) *AuthTokenFactory {
-	return &AuthTokenFactory{key: key}
+func NewAuthTokenService(key *ecdsa.PrivateKey) *AuthTokenService {
+	return &AuthTokenService{key: key, signingMethod: jwt.SigningMethodES256}
 }
 
-func (atg *AuthTokenFactory) Create(userID int, expiration time.Duration) (string, error) {
-	t := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
+func (atg *AuthTokenService) Create(userID int, expiration time.Duration) (string, error) {
+	t := jwt.NewWithClaims(atg.signingMethod, jwt.RegisteredClaims{
 		Subject:   strconv.Itoa(userID),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiration)),
 	})
@@ -103,6 +111,8 @@ func (atg *AuthTokenFactory) Create(userID int, expiration time.Duration) (strin
 	return tokenStr, nil
 }
 
+// loadECDSAPrivateKey reads an ECDSA private key from a PEM file
+// from the given path.
 func loadECDSAPrivateKey(path string) (*ecdsa.PrivateKey, error) {
 	rawData, err := os.ReadFile(path)
 	if err != nil {

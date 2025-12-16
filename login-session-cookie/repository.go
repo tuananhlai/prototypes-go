@@ -16,11 +16,17 @@ func NewSessionRepository() *SessionRepository {
 	}
 }
 
-func (s *SessionRepository) CreateSession(userID int) string {
+func (s *SessionRepository) Create(userID int) string {
 	sessionID := uuid.New().String()
 	s.sessions[sessionID] = userID
 
 	return sessionID
+}
+
+func (s *SessionRepository) Delete(sessionID string) error {
+	delete(s.sessions, sessionID)
+
+	return nil
 }
 
 func (s *SessionRepository) GetUserID(sessionID string) (int, error) {

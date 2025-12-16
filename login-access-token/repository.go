@@ -12,24 +12,25 @@ type User struct {
 }
 
 type UserRepository struct {
-	users map[int]*User
+	users []*User
 }
 
 func NewUserRepository() *UserRepository {
 	return &UserRepository{
-		users: map[int]*User{
-			1: {ID: 1, Username: "johndoe", Name: "John Doe", Password: "password"},
+		users: []*User{
+			{ID: 1, Username: "johndoe", Name: "John Doe", Password: "password"},
 		},
 	}
 }
 
 func (u *UserRepository) GetUserByID(id int) (*User, error) {
-	user, ok := u.users[id]
-	if !ok {
-		return nil, fmt.Errorf("error user not found")
+	for _, user := range u.users {
+		if user.ID == id {
+			return user, nil
+		}
 	}
 
-	return user, nil
+	return nil, fmt.Errorf("error user not found")
 }
 
 func (u *UserRepository) Login(username string, password string) (*User, error) {

@@ -27,6 +27,8 @@ func main() {
 	authMiddleware := NewAuthMiddleware(userRepo, sessionRepo)
 
 	mux.HandleFunc("POST /login", loginHandler(userRepo, sessionRepo))
+	// TODO: test this endpoint
+	mux.HandleFunc("POST /logout", logoutHandler(sessionRepo))
 	mux.Handle("GET /me", authMiddleware.Wrap(meHandler()))
 
 	log.Println("starting server at", addr)
@@ -39,6 +41,19 @@ type MeResponseDTO struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
 	Name     string `json:"name"`
+}
+
+func logoutHandler(sessionRepo *SessionRepository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionIDCookie, err := r.Cookie(sessionCookieName)
+		if err != nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		sessionRepo.Delete(sessionIDCookie.Value)
+		deleteCookie(w, sessionCookieName)
+	}
 }
 
 // meHandler is a HTTP endpoint that returns user information.
@@ -56,7 +71,7 @@ func meHandler() http.HandlerFunc {
 			Name:     user.Name,
 		}
 
-		w.WriteHeader(http.StatusOK)
+		w.Header().Add("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(res)
 	}
 }
@@ -86,7 +101,7 @@ func loginHandler(userRepo *UserRepository, sessionRepo *SessionRepository) http
 			return
 		}
 
-		sessionID := sessionRepo.CreateSession(user.ID)
+		sessionID := sessionRepo.Create(user.ID)
 		http.SetCookie(w, &http.Cookie{
 			Name:     "session_id",
 			Value:    sessionID,
@@ -100,7 +115,7 @@ func loginHandler(userRepo *UserRepository, sessionRepo *SessionRepository) http
 			Username: user.Username,
 			Name:     user.Name,
 		}
-		w.WriteHeader(http.StatusOK)
+		w.Header().Add("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(res)
 	}
 }
@@ -153,4 +168,15 @@ func (am *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, CreateRequestWithUser(r, user))
 	})
+}
+
+func deleteCookie(w http.ResponseWriter, name string) {
+	cookie := &http.Cookie{
+		Name:     name,
+		Value:    "",
+		MaxAge:   -1,
+		Path:     "/",
+		HttpOnly: true,
+	}
+	http.SetCookie(w, cookie)
 }

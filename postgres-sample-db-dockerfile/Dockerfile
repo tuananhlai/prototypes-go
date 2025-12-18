@@ -12,7 +12,8 @@ RUN set -eux; \
 RUN set -eux; \
     mkdir -p /tmp/datasets; \
     curl -L -o /tmp/datasets/pagila-schema.sql https://raw.githubusercontent.com/devrimgunduz/pagila/master/pagila-schema.sql; \
-    curl -L -o /tmp/datasets/pagila-data.sql https://raw.githubusercontent.com/devrimgunduz/pagila/master/pagila-data.sql;
+    curl -L -o /tmp/datasets/pagila-data.sql https://raw.githubusercontent.com/devrimgunduz/pagila/master/pagila-data.sql; \
+    curl -L -o /tmp/datasets/employees.sql.gz  https://raw.githubusercontent.com/neondatabase-labs/postgres-sample-dbs/main/employees.sql.gz;
 
 # Load both sample databases on first container start
 RUN set -eux; \
@@ -23,9 +24,16 @@ set -euo pipefail
 # Create dedicated databases for the samples
 psql --username "$POSTGRES_USER" --dbname "${POSTGRES_DB:-postgres}" <<'SQL'
 CREATE DATABASE pagila;
+
+CREATE DATABASE employees;
+\c employees
+CREATE SCHEMA employees;
 SQL
 
 # Import Pagila (plain SQL)
 psql --username "$POSTGRES_USER" --dbname pagila -f /tmp/datasets/pagila-schema.sql
 psql --username "$POSTGRES_USER" --dbname pagila -f /tmp/datasets/pagila-data.sql
+
+# Import `employees` database
+pg_restore -U "$POSTGRES_USER" -d employees -Fc /tmp/datasets/employees.sql.gz -v --no-owner --no-privileges || true
 EOF

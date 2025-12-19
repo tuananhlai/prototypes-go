@@ -35,5 +35,5 @@ psql --username "$POSTGRES_USER" --dbname pagila -f /tmp/datasets/pagila-schema.
 psql --username "$POSTGRES_USER" --dbname pagila -f /tmp/datasets/pagila-data.sql
 
 # Import `employees` database
-pg_restore -U "$POSTGRES_USER" -d employees -Fc /tmp/datasets/employees.sql.gz -v --no-owner --no-privileges || true
+pg_restore -U "$POSTGRES_USER" -d employees -Fc /tmp/datasets/employees.sql.gz -v --no-owner --no-privileges
 EOF

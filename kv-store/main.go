@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -11,6 +14,7 @@ import (
 
 const (
 	connStr = "postgres://postgres:postgres@localhost:5432/prototype?sslmode=disable"
+	addr    = ":8080"
 )
 
 func main() {
@@ -27,44 +31,73 @@ func main() {
 
 	kvStore := NewKVStore(db)
 
-	err = kvStore.Put("key1", "value1", time.Minute)
-	if err != nil {
-		log.Fatalf("error putting kv: %v", err)
-	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /kv/{key}", func(w http.ResponseWriter, r *http.Request) {
+		key := r.PathValue("key")
 
-	value, err := kvStore.Get("key1")
-	if err != nil {
-		log.Fatalf("error getting kv: %v", err)
-	}
-	fmt.Println(value)
+		val, err := kvStore.Get(r.Context(), key)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-	value, err = kvStore.Get("key2")
-	if err != nil {
-		log.Printf("error getting key2: %v", err)
-	}
-	fmt.Println(value)
+		w.Header().Add("content-type", "application/json")
+		json.NewEncoder(w).Encode(GetKeyResponseDTO{
+			Key:   key,
+			Value: val,
+		})
+	})
 
-	err = kvStore.Del("key1")
-	if err != nil {
-		log.Fatalf("error deleting kv: %v", err)
-	}
+	mux.HandleFunc("PUT /kv/{key}", func(w http.ResponseWriter, r *http.Request) {
+		key := r.PathValue("key")
 
-	value, err = kvStore.Get("key1")
-	if err != nil {
-		log.Printf("error getting key1: %v", err)
+		var req PutKeyRequestDTO
+		if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if req.Value == "" {
+			http.Error(w, "value cannot be empty", http.StatusBadRequest)
+		}
+
+		expiration, err := time.ParseDuration(req.Expiration)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+
+		err = kvStore.Put(r.Context(), key, req.Value, expiration)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("DELETE /kv/{key}", func(w http.ResponseWriter, r *http.Request) {
+		key := r.PathValue("key")
+
+		err := kvStore.Del(r.Context(), key)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	log.Printf("kv store listening on %s", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatalf("server error: %v", err)
 	}
-	fmt.Println(value)
 }
 
 func setupDatabase(db *sql.DB) error {
-	_, err := db.Exec("DROP TABLE IF EXISTS kv")
-	if err != nil {
-		return fmt.Errorf("error dropping table: %v", err)
-	}
-	_, err = db.Exec(`CREATE TABLE kv (
-		key VARCHAR(255) PRIMARY KEY, 
-		value VARCHAR(255), 
-		expires_at TIMESTAMP
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS kv (
+		key VARCHAR(255) PRIMARY KEY,
+		value VARCHAR(255),
+		expires_at TIMESTAMPTZ
 	)`)
 	if err != nil {
 		return fmt.Errorf("error creating table: %v", err)
@@ -81,11 +114,16 @@ func NewKVStore(db *sql.DB) *KVStore {
 	return &KVStore{db: db}
 }
 
-func (k *KVStore) Put(key string, value string, expiration time.Duration) error {
-	expiresAt := time.Now().Add(expiration)
+func (k *KVStore) Put(ctx context.Context, key string, value string, expiration time.Duration) error {
+	expiresAt := new(time.Time)
+	if expiration > 0 {
+		*expiresAt = time.Now().Add(expiration)
+	} else {
+		expiresAt = nil
+	}
 
-	_, err := k.db.Exec(`
-	INSERT INTO kv (key, value, expires_at) VALUES ($1, $2, $3) 
+	_, err := k.db.ExecContext(ctx, `
+	INSERT INTO kv (key, value, expires_at) VALUES ($1, $2, $3)
 	ON CONFLICT (key) DO UPDATE SET value = $2, expires_at = $3
 	`, key, value, expiresAt)
 	if err != nil {
@@ -95,11 +133,11 @@ func (k *KVStore) Put(key string, value string, expiration time.Duration) error 
 	return nil
 }
 
-func (k *KVStore) Get(key string) (string, error) {
+func (k *KVStore) Get(ctx context.Context, key string) (string, error) {
 	var value string
 
-	err := k.db.QueryRow(`
-	SELECT value FROM kv WHERE key = $1 AND expires_at > NOW()
+	err := k.db.QueryRowContext(ctx, `
+	SELECT value FROM kv WHERE key = $1 AND (expires_at > NOW() OR expires_at IS NULL)
 	`, key).Scan(&value)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -110,8 +148,8 @@ func (k *KVStore) Get(key string) (string, error) {
 	return value, nil
 }
 
-func (k *KVStore) Del(key string) error {
-	_, err := k.db.Exec(`
+func (k *KVStore) Del(ctx context.Context, key string) error {
+	_, err := k.db.ExecContext(ctx, `
 	UPDATE kv SET expires_at = NOW() WHERE key = $1
 	`, key)
 	if err != nil {
@@ -119,4 +157,15 @@ func (k *KVStore) Del(key string) error {
 	}
 
 	return nil
+}
+
+type PutKeyRequestDTO struct {
+	Value string `json:"value"`
+	// Duration format string (i.e 15m)
+	Expiration string `json:"expiration"`
+}
+
+type GetKeyResponseDTO struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }

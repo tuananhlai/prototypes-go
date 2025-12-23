@@ -1,5 +1,7 @@
 # Minimal distributed transaction using two-phase commit (2PC)
 
+![img](./diagram.svg)
+
 ```mermaid
 sequenceDiagram
   autonumber

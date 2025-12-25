@@ -1,0 +1,9 @@
+version: "3"
+
+tasks:
+  g:
+    desc: Create a Go module folder with starter files
+    vars:
+      NAME: "{{.CLI_ARGS}}"
+    cmds:
+      - sh ./scripts/generate_prototype.sh "{{.NAME}}"

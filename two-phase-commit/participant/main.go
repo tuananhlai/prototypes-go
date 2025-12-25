@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"maps"
 	"net/http"
@@ -10,12 +11,13 @@ import (
 	"time"
 )
 
-const (
-	addr = ":9090"
-)
-
 func main() {
 	allow := os.Getenv("ALLOW_PREPARE") != "false"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9090"
+	}
+	addr := fmt.Sprintf(":%s", port)
 
 	p := NewParticipant(allow)
 
@@ -41,7 +43,7 @@ const (
 )
 
 type PrepareRequest struct {
-	TxID   string            `json:"tx_id"`
+	TxID string `json:"tx_id"`
 	// Writes are the data to be written into durable stores owned by this participant.
 	Writes map[string]string `json:"writes"`
 }

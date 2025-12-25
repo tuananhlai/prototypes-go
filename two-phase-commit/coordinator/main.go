@@ -69,7 +69,7 @@ func postJSON(ctx context.Context, c *http.Client, url string, v any, out any) e
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, url, "application/json", bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}

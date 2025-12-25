@@ -42,6 +42,7 @@ const (
 
 type PrepareRequest struct {
 	TxID   string            `json:"tx_id"`
+	// Writes are the data to be written into durable stores owned by this participant.
 	Writes map[string]string `json:"writes"`
 }
 
@@ -61,6 +62,7 @@ type Participant struct {
 	txState map[string]TxState
 	pending map[string]map[string]string
 
+	// If false, this participant will always return error on PREPARE request.
 	allowPrepare bool
 }
 

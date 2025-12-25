@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log/slog"
+	"log"
 	"net/http"
 )
 
@@ -19,8 +19,8 @@ func main() {
 	handler := http.StripPrefix("/assets/", http.FileServer(http.Dir("assets")))
 	mux.Handle("/assets/", handler)
 
-	slog.Info("Starting http server", "port", ":8080")
+	log.Println("Starting http server at :8080")
 	if err := http.ListenAndServe(":8080", mux); err != nil {
-		slog.Error("error starting http server", "error", err)
+		log.Fatalf("error starting http server: %v", err)
 	}
 }

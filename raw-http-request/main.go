@@ -4,16 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log/slog"
+	"log"
 	"net"
-	"os"
 )
 
 func main() {
 	conn, err := net.Dial("tcp", "example.com:80")
 	if err != nil {
-		slog.Error("error creating tcp connection", slog.String("error", err.Error()))
-		os.Exit(1)
+		log.Fatalf("error creating tcp connection: %v", err)
 	}
 	defer conn.Close()
 
@@ -22,15 +20,13 @@ func main() {
 
 	_, err = conn.Write([]byte(request))
 	if err != nil {
-		slog.Error("error writing data to TCP connection", slog.String("error", err.Error()))
-		os.Exit(1)
+		log.Fatalf("error writing data to TCP connection: %v", err)
 	}
 
 	reader := bufio.NewReader(conn)
 	rawRes, err := io.ReadAll(reader)
 	if err != nil {
-		slog.Error("error reading response", slog.String("error", err.Error()))
-		os.Exit(1)
+		log.Fatalf("error reading response: %v", err)
 	}
 
 	fmt.Println(string(rawRes))

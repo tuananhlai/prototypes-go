@@ -7,8 +7,29 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
+
+func main() {
+	partsEnv := os.Getenv("PARTICIPANTS")
+	if partsEnv == "" {
+		partsEnv = "http://localhost:9001,http://localhost:9002"
+	}
+	participants := strings.Split(partsEnv, ",")
+
+	co := NewCoordinator(participants, 2*time.Second)
+	txID := fmt.Sprintf("tx-%d", time.Now().UnixNano())
+
+	writes := []map[string]string{
+		{"a": "1", "shared": "p1"},
+		{"b": "2", "shared": "p2"},
+	}
+
+	decision, err := co.Run2PC(txID, writes)
+	log.Printf("[coord] tx=%s final=%s err=%v\n", txID, decision, err)
+}
 
 type PrepareRequest struct {
 	TxID   string            `json:"tx_id"`
@@ -102,6 +123,24 @@ func (co *Coordinator) Run2PC(txID string, writesPerParticipant []map[string]str
 	log.Printf("[coord] tx=%s decision=%s phase=DECIDE\n", txID, decision)
 
 	for _, base := range co.participants {
+		ctx, cancel := context.WithTimeout(context.Background(), co.timeout)
+		defer cancel()
 
+		endpoint := "/commit"
+		if decision == "ABORT" {
+			endpoint = "/abort"
+		}
+
+		err := postJSON(ctx, co.client, base+endpoint, DecisionRequest{TxID: txID}, nil)
+		if err != nil {
+			log.Printf("[coord] tx=%s participant=%s decision_send=FAIL err=%v\n", txID, base, err)
+		} else {
+			log.Printf("[coord] tx=%s participant=%s decision_send=OK\n", txID, base)
+		}
 	}
+
+	if !allOK {
+		return decision, fmt.Errorf("prepare failed; aborted")
+	}
+	return decision, nil
 }

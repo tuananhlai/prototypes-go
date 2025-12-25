@@ -96,7 +96,7 @@ func (co *Coordinator) Run2PC(txID string, writesPerParticipant []map[string]str
 		return "", fmt.Errorf("writesPerParticipant must match participants length")
 	}
 
-	log.Printf("[coord] tx=$s phase=PREPARE\n", txID)
+	log.Printf("[coord] tx=%s phase=PREPARE\n", txID)
 	allOK := true
 
 	for i, base := range co.participants {

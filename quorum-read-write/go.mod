@@ -1,0 +1,3 @@
+module github.com/tuananhlai/prototypes/quorum-read-write
+
+go 1.25.5

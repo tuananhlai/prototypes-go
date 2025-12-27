@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+// demonstrate how quorum read and write work. does not handle node errors
+// or edge cases yet.
 func main() {
 	nodes := []*Node{
 		NewNode("1", 200*time.Millisecond),
@@ -23,10 +25,18 @@ func main() {
 	cluster.Write("bar", "barValue")
 	cluster.Write("baz", "bazValue")
 
-	log.Println(
+	log.Printf(
+		`cluster.Read("foo") -> '%s', cluster.Read("bar") -> '%s', cluster.Read("baz") -> '%s'\n`,
 		cluster.Read("foo"),
 		cluster.Read("bar"),
 		cluster.Read("baz"),
+	)
+
+	log.Printf(
+		`cluster.ConsistentRead("foo") -> '%s', cluster.ConsistentRead("bar") -> '%s', cluster.ConsistentRead("baz") -> '%s'\n`,
+		cluster.ConsistentRead("foo"),
+		cluster.ConsistentRead("bar"),
+		cluster.ConsistentRead("baz"),
 	)
 
 	log.Println(cluster.ConsistentRead("foo"), cluster.ConsistentRead("bar"), cluster.ConsistentRead("baz"))
@@ -56,7 +66,11 @@ func (c *Cluster) Write(key, val string) {
 	ackCh := make(chan struct{}, len(c.nodes))
 	for _, node := range c.nodes {
 		go func(nde *Node) {
-			nde.Write(key, val)
+			nde.Write(key, Entry{
+				Value: val,
+				// generate the version on the coordinator to ensure monotonicity.
+				Version: time.Now(),
+			})
 			ackCh <- struct{}{}
 		}(node)
 	}
@@ -138,15 +152,12 @@ func NewNode(id string, latency time.Duration) *Node {
 	}
 }
 
-func (node *Node) Write(key string, value string) {
+func (node *Node) Write(key string, entry Entry) {
 	time.Sleep(node.writeLatency)
 	node.mu.Lock()
-	node.data[key] = Entry{
-		Value:   value,
-		Version: time.Now(),
-	}
+	node.data[key] = entry
 	node.mu.Unlock()
-	log.Printf("[Node %s] %s:%s written\n", node.id, key, value)
+	log.Printf("[Node %s] %s:%s written\n", node.id, key, entry.Value)
 }
 
 func (node *Node) Read(key string) Entry {

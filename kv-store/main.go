@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net/http"
 	"time"
@@ -13,23 +14,26 @@ import (
 )
 
 const (
-	connStr = "postgres://postgres:postgres@localhost:5432/prototype?sslmode=disable"
+	connStr = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 	addr    = ":8080"
 )
 
+// TODO: prevent database already exists error when running the example multiple times.
+// TODO: add logging so that reader knows which shard is being used for each request.
+// TODO: support multiple sharding strategies.
+// TODO: reuse hash.New32a() to avoid creating a new hash function for each request.
 func main() {
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatalf("error opening database: %v", err)
-	}
-	defer db.Close()
-
-	err = setupDatabase(db)
+	shards, err := setupDatabase(connStr)
 	if err != nil {
 		log.Fatalf("error setting up database: %v", err)
 	}
 
-	kvStore := NewKVStore(db)
+	shardManager, err := NewShardManager(shards)
+	if err != nil {
+		log.Fatalf("error creating shard manager: %v", err)
+	}
+
+	kvStore := NewKVStore(shardManager)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /kv/{key}", func(w http.ResponseWriter, r *http.Request) {
@@ -93,25 +97,58 @@ func main() {
 	}
 }
 
-func setupDatabase(db *sql.DB) error {
-	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS kv (
-		key VARCHAR(255) PRIMARY KEY,
-		value VARCHAR(255),
-		expires_at TIMESTAMPTZ
-	)`)
+// setupDatabase creates and initializes 3 database shards.
+func setupDatabase(connStr string) ([]*sql.DB, error) {
+	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		return fmt.Errorf("error creating table: %v", err)
+		return nil, err
+	}
+	defer db.Close()
+
+	shardNames := []string{"kvstore_1", "kvstore_2", "kvstore_3"}
+	shards := []*sql.DB{}
+
+	var errs []error
+	for _, shardName := range shardNames {
+		_, err := db.Exec(fmt.Sprintf("CREATE DATABASE %s", shardName))
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		shard, err := sql.Open("postgres", fmt.Sprintf(
+			"postgres://postgres:postgres@localhost:5432/%s?sslmode=disable", shardName))
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		shards = append(shards, shard)
+
+		_, err = shard.Exec(`
+			CREATE TABLE IF NOT EXISTS kv (
+				key        VARCHAR(255) PRIMARY KEY,
+				value      VARCHAR(255),
+				expires_at TIMESTAMPTZ
+			)
+		`)
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	return nil
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("error setting up database: %v", errs)
+	}
+
+	return shards, nil
 }
 
 type KVStore struct {
-	db *sql.DB
+	shardManager *ShardManager
 }
 
-func NewKVStore(db *sql.DB) *KVStore {
-	return &KVStore{db: db}
+func NewKVStore(shardManager *ShardManager) *KVStore {
+	return &KVStore{shardManager: shardManager}
 }
 
 func (k *KVStore) Put(ctx context.Context, key string, value string, expiration time.Duration) error {
@@ -122,7 +159,7 @@ func (k *KVStore) Put(ctx context.Context, key string, value string, expiration 
 		expiresAt = nil
 	}
 
-	_, err := k.db.ExecContext(ctx, `
+	_, err := k.shardManager.GetShard(key).ExecContext(ctx, `
 	INSERT INTO kv (key, value, expires_at) VALUES ($1, $2, $3)
 	ON CONFLICT (key) DO UPDATE SET value = $2, expires_at = $3
 	`, key, value, expiresAt)
@@ -136,7 +173,7 @@ func (k *KVStore) Put(ctx context.Context, key string, value string, expiration 
 func (k *KVStore) Get(ctx context.Context, key string) (string, error) {
 	var value string
 
-	err := k.db.QueryRowContext(ctx, `
+	err := k.shardManager.GetShard(key).QueryRowContext(ctx, `
 	SELECT value FROM kv WHERE key = $1 AND (expires_at > NOW() OR expires_at IS NULL)
 	`, key).Scan(&value)
 	if err != nil {
@@ -149,7 +186,7 @@ func (k *KVStore) Get(ctx context.Context, key string) (string, error) {
 }
 
 func (k *KVStore) Del(ctx context.Context, key string) error {
-	_, err := k.db.ExecContext(ctx, `
+	_, err := k.shardManager.GetShard(key).ExecContext(ctx, `
 	UPDATE kv SET expires_at = NOW() WHERE key = $1
 	`, key)
 	if err != nil {
@@ -157,6 +194,29 @@ func (k *KVStore) Del(ctx context.Context, key string) error {
 	}
 
 	return nil
+}
+
+// ShardManager picks a shard for a given record key.
+type ShardManager struct {
+	shards []*sql.DB
+}
+
+func NewShardManager(shards []*sql.DB) (*ShardManager, error) {
+	if len(shards) == 0 {
+		return nil, fmt.Errorf("no data sources provided")
+	}
+
+	return &ShardManager{
+		shards: shards,
+	}, nil
+}
+
+// GetShard returns the shard for the given key.
+func (sm *ShardManager) GetShard(key string) *sql.DB {
+	hash := fnv.New32a()
+	hash.Write([]byte(key))
+	index := hash.Sum32() % uint32(len(sm.shards))
+	return sm.shards[index]
 }
 
 type PutKeyRequestDTO struct {

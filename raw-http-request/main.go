@@ -1,13 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"log"
 	"net"
 )
 
+// Send a HTTP request to example.com.
 func main() {
 	conn, err := net.Dial("tcp", "example.com:80")
 	if err != nil {
@@ -23,8 +23,7 @@ func main() {
 		log.Fatalf("error writing data to TCP connection: %v", err)
 	}
 
-	reader := bufio.NewReader(conn)
-	rawRes, err := io.ReadAll(reader)
+	rawRes, err := io.ReadAll(conn)
 	if err != nil {
 		log.Fatalf("error reading response: %v", err)
 	}

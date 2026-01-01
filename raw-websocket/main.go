@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net/http"
@@ -54,6 +55,11 @@ func main() {
 			}
 
 			fmt.Printf("Received: %s\n", string(payload))
+
+			if err := wsConn.WriteMessage(payload); err != nil {
+				log.Println("failed to write message: ", err)
+				return
+			}
 		}
 	})
 
@@ -64,6 +70,7 @@ func main() {
 }
 
 func generateAcceptKey(clientKey string) string {
+	// https://datatracker.ietf.org/doc/html/rfc6455#:~:text=%22258EAFA5%2DE914%2D47DA%2D95CA%2DC5AB0DC85B11%22
 	const guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 	h := sha1.New()
 	h.Write([]byte(clientKey + guid))
@@ -80,19 +87,20 @@ func NewWebsocketConn(connRW *bufio.ReadWriter) *WebsocketConn {
 	}
 }
 
-func (wc *WebsocketConn) ReadMessage() (string, error) {
+func (wc *WebsocketConn) ReadMessage() ([]byte, error) {
+	// Data framing / Packet structure: https://datatracker.ietf.org/doc/html/rfc6455#section-5
 	header := make([]byte, 2)
 	// does the cursor(?) move after `Read` is called?
 	_, err := wc.connRW.Read(header)
 	if err != nil {
-		return "", fmt.Errorf("failed to read header: %w", err)
+		return nil, fmt.Errorf("failed to read header: %w", err)
 	}
 
 	// what is a mask key?
 	maskKey := make([]byte, 4)
 	_, err = wc.connRW.Read(maskKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to read mask key: %w", err)
+		return nil, fmt.Errorf("failed to read mask key: %w", err)
 	}
 
 	// Why use AND bit operator for the payload len?
@@ -100,12 +108,47 @@ func (wc *WebsocketConn) ReadMessage() (string, error) {
 	payload := make([]byte, payloadLen)
 	_, err = wc.connRW.Read(payload)
 	if err != nil {
-		return "", fmt.Errorf("failed to read payload: %w", err)
+		return nil, fmt.Errorf("failed to read payload: %w", err)
 	}
 
 	for i := range payloadLen {
 		payload[i] ^= maskKey[i%4]
 	}
 
-	return string(payload), nil
+	return payload, nil
+}
+
+func (wc *WebsocketConn) WriteMessage(message []byte) error {
+	// Data framing / Packet structure: https://datatracker.ietf.org/doc/html/rfc6455#section-5
+	payload := []byte(message)
+	payloadLen := len(payload)
+	header := []byte{0x81, 0}
+
+	if payloadLen <= 125 {
+		header[1] = byte(payloadLen)
+	} else if payloadLen <= 65535 {
+		header[1] = 126
+		lenBuf := make([]byte, 2)
+		binary.BigEndian.PutUint16(lenBuf, uint16(payloadLen))
+		header = append(header, lenBuf...)
+	} else {
+		header[1] = 127
+		lenBuf := make([]byte, 8)
+		binary.BigEndian.PutUint64(lenBuf, uint64(payloadLen))
+		header = append(header, lenBuf...)
+	}
+
+	if _, err := wc.connRW.Write(header); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+	if _, err := wc.connRW.Write(payload); err != nil {
+		return fmt.Errorf("failed to write payload: %w", err)
+	}
+
+	err := wc.connRW.Flush()
+	if err != nil {
+		return fmt.Errorf("failed to flush connection write buffer: %w", err)
+	}
+
+	return nil
 }

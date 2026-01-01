@@ -34,11 +34,19 @@ func main() {
 	authMiddleware := NewAuthMiddleware(userRepo, authTokenService)
 
 	mux.HandleFunc("POST /login", loginHandler(userRepo, authTokenService))
+	// TODO: test this endpoint
+	mux.HandleFunc("POST /logout", logoutHandler())
 	mux.Handle("GET /me", authMiddleware.Wrap(meHandler(userRepo)))
 
 	log.Println("starting server on", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func logoutHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Clear-Site-Data", "*")
 	}
 }
 

@@ -45,6 +45,8 @@ type MeResponseDTO struct {
 
 func logoutHandler(sessionRepo *SessionRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Clear-Site-Data", "*")
+
 		sessionIDCookie, err := r.Cookie(sessionCookieName)
 		if err != nil {
 			w.WriteHeader(http.StatusNoContent)
@@ -52,7 +54,6 @@ func logoutHandler(sessionRepo *SessionRepository) http.HandlerFunc {
 		}
 
 		sessionRepo.Delete(sessionIDCookie.Value)
-		deleteCookie(w, sessionCookieName)
 	}
 }
 
@@ -168,15 +169,4 @@ func (am *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, CreateRequestWithUser(r, user))
 	})
-}
-
-func deleteCookie(w http.ResponseWriter, name string) {
-	cookie := &http.Cookie{
-		Name:     name,
-		Value:    "",
-		MaxAge:   -1,
-		Path:     "/",
-		HttpOnly: true,
-	}
-	http.SetCookie(w, cookie)
 }

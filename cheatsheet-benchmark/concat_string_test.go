@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-var (
-	sinkString string
-)
-
 func BenchmarkStringsConcat(b *testing.B) {
 	parts := []string{"hello", " ", "world", "!", " ", "bench"}
 
@@ -19,7 +15,6 @@ func BenchmarkStringsConcat(b *testing.B) {
 		for _, p := range parts {
 			s += p
 		}
-		sinkString = s
 	}
 }
 
@@ -33,7 +28,6 @@ func BenchmarkStringBuilder(b *testing.B) {
 		for _, p := range parts {
 			sb.WriteString(p)
 		}
-		sinkString = sb.String()
 	}
 }
 
@@ -48,6 +42,5 @@ func BenchmarkStringBuilderPreallocate(b *testing.B) {
 		for _, p := range parts {
 			sb.WriteString(p)
 		}
-		sinkString = sb.String()
 	}
 }

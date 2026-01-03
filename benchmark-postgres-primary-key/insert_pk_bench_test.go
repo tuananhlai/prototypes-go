@@ -151,26 +151,23 @@ func copyInsertAges(tb testing.TB, table string, n int) {
 func BenchmarkInsert1M_IntPK(b *testing.B) {
 	setupSchema(b)
 
-	// Each benchmark iteration does a full 1M-row load; run with -benchtime=1x.
-	b.ReportAllocs()
-	for range b.N {
-		truncateTable(b, intTable, true)
-
-		b.ResetTimer()
-		copyInsertAges(b, intTable, rowCount)
+	for b.Loop() {
 		b.StopTimer()
+		truncateTable(b, intTable, true)
+		b.StartTimer()
+
+		copyInsertAges(b, intTable, rowCount)
 	}
 }
 
 func BenchmarkInsert1M_UUIDPK(b *testing.B) {
 	setupSchema(b)
 
-	b.ReportAllocs()
-	for range b.N {
-		truncateTable(b, uuidTable, false)
-
-		b.ResetTimer()
-		copyInsertAges(b, uuidTable, rowCount)
+	for b.Loop() {
 		b.StopTimer()
+		truncateTable(b, uuidTable, false)
+		b.StartTimer()
+
+		copyInsertAges(b, uuidTable, rowCount)
 	}
 }

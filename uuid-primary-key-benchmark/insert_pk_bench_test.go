@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"testing"
 	"time"
@@ -122,9 +123,11 @@ func copyInsertAges(tb testing.TB, table string, n int) {
 		tb.Fatalf("prepare copyin failed: %v", err)
 	}
 
+	rnd := rand.New(rand.NewChaCha8([32]byte{}))
+
 	// Stream rows; no large allocations.
-	for i := 0; i < n; i++ {
-		age := int32(i % 100) // deterministic, cheap
+	for i := range n {
+		age := rnd.IntN(200)
 		if _, err := stmt.ExecContext(ctx, age); err != nil {
 			_ = stmt.Close()
 			tb.Fatalf("copy exec failed at row %d: %v", i, err)
@@ -150,7 +153,7 @@ func BenchmarkInsert1M_IntPK(b *testing.B) {
 
 	// Each benchmark iteration does a full 1M-row load; run with -benchtime=1x.
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		truncateTable(b, intTable, true)
 
 		b.ResetTimer()
@@ -163,7 +166,7 @@ func BenchmarkInsert1M_UUIDPK(b *testing.B) {
 	setupSchema(b)
 
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		truncateTable(b, uuidTable, false)
 
 		b.ResetTimer()

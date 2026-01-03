@@ -1,0 +1,15 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/tuananhlai/prototypes/cheatsheet-benchmark
+cpu: Apple M1 Max
+BenchmarkAtomicVsMutex/atomic-10        	20578748	        72.28 ns/op
+BenchmarkAtomicVsMutex/mutex-10         	10061448	       114.9 ns/op
+BenchmarkStringsConcat-10               	10509525	       117.5 ns/op	      80 B/op	       5 allocs/op
+BenchmarkStringBuilder-10               	16150666	        74.50 ns/op	      56 B/op	       3 allocs/op
+BenchmarkStringBuilderPreallocate-10    	28095696	        43.20 ns/op	      64 B/op	       1 allocs/op
+BenchmarkHexEncoding/hex.EncodeToString-10         	 3580761	       335.2 ns/op
+BenchmarkHexEncoding/manual_(bytes.Buffer)-10      	 2894888	       403.6 ns/op
+BenchmarkSHA256-10                                 	  283051	      4250 ns/op	2409.24 MB/s
+BenchmarkSort-10                                   	40324387	        29.06 ns/op	         0.3442 compares/ns	        10.00 compares/op
+PASS
+ok  	github.com/tuananhlai/prototypes/cheatsheet-benchmark	11.857s

@@ -29,12 +29,13 @@ func main() {
 
 		hijacker, ok := w.(http.Hijacker)
 		if !ok {
+			http.Error(w, "invalid data type for response writer", http.StatusInternalServerError)
 			return
 		}
 
 		conn, bufrw, err := hijacker.Hijack()
 		if err != nil {
-			log.Println("failed to hijack connection:", err)
+			http.Error(w, fmt.Sprint("failed to hijack connection:", err), http.StatusInternalServerError)
 			return
 		}
 		defer conn.Close()

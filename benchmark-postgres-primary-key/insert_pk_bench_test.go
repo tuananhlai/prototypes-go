@@ -1,173 +1,210 @@
 package bench
 
 import (
-	"context"
 	"database/sql"
-	"fmt"
-	"math/rand/v2"
-	"sync"
 	"testing"
-	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
 const (
-	intTable  = "bench_int_pk"
-	uuidTable = "bench_uuid_pk"
-	rowCount  = 1_000_000
-	dsn       = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+	connStr = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+	numRows = 1000000
 )
 
-var (
-	db   *sql.DB
-	once sync.Once
-)
+var db *sql.DB
 
-func getDB(tb testing.TB) *sql.DB {
-	tb.Helper()
+func init() {
+	var err error
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		panic(err)
+	}
 
-	once.Do(func() {
-		var err error
-		db, err = sql.Open("postgres", dsn)
+	_, err = db.Exec(`
+DROP TABLE IF EXISTS bench_int_pk;
+CREATE TABLE bench_int_pk (
+		id BIGSERIAL PRIMARY KEY,
+		age INT NOT NULL
+);
+
+DROP TABLE IF EXISTS bench_uuid_pk;
+CREATE TABLE bench_uuid_pk (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		age INT NOT NULL
+);
+`)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func BenchmarkInsertIntPk(b *testing.B) {
+	var err error
+	for b.Loop() {
+		err = truncateTable("bench_int_pk")
 		if err != nil {
-			panic(err)
+			b.Fatal(err)
 		}
 
-		// Basic pool sizing; tune as needed.
-		db.SetMaxOpenConns(10)
-		db.SetMaxIdleConns(10)
-		db.SetConnMaxLifetime(30 * time.Minute)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := db.PingContext(ctx); err != nil {
-			panic(err)
-		}
-	})
-
-	return db
-}
-
-func setupSchema(tb testing.TB) {
-	tb.Helper()
-	d := getDB(tb)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	// pgcrypto provides gen_random_uuid()
-	stmts := []string{
-		fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, intTable),
-		fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, uuidTable),
-
-		fmt.Sprintf(`
-			CREATE TABLE %s (
-				id  BIGSERIAL PRIMARY KEY,
-				age INTEGER NOT NULL
-			);`, intTable),
-
-		fmt.Sprintf(`
-			CREATE TABLE %s (
-				id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-				age INTEGER NOT NULL
-			);`, uuidTable),
-
-		fmt.Sprintf(`CREATE INDEX %s_age_idx ON %s (age);`, intTable, intTable),
-		fmt.Sprintf(`CREATE INDEX %s_age_idx ON %s (age);`, uuidTable, uuidTable),
-	}
-
-	for _, s := range stmts {
-		if _, err := d.ExecContext(ctx, s); err != nil {
-			tb.Fatalf("setup failed on %q: %v", s, err)
+		err = insertIntPk(numRows)
+		if err != nil {
+			b.Fatal(err)
 		}
 	}
 }
 
-func truncateTable(tb testing.TB, table string, restartIdentity bool) {
-	tb.Helper()
-	d := getDB(tb)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	q := fmt.Sprintf("TRUNCATE TABLE %s", table)
-	if restartIdentity {
-		q += " RESTART IDENTITY"
-	}
-	q += ";"
-
-	if _, err := d.ExecContext(ctx, q); err != nil {
-		tb.Fatalf("truncate %s failed: %v", table, err)
-	}
-}
-
-func copyInsertAges(tb testing.TB, table string, n int) {
-	tb.Helper()
-	d := getDB(tb)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	tx, err := d.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		tb.Fatalf("begin tx failed: %v", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	// Insert only "age". For int PK, id comes from sequence; for uuid PK, id comes from default gen_random_uuid().
-	stmt, err := tx.PrepareContext(ctx, pq.CopyIn(table, "age"))
-	if err != nil {
-		tb.Fatalf("prepare copyin failed: %v", err)
-	}
-
-	rnd := rand.New(rand.NewChaCha8([32]byte{}))
-
-	// Stream rows; no large allocations.
-	for i := range n {
-		age := rnd.IntN(200)
-		if _, err := stmt.ExecContext(ctx, age); err != nil {
-			_ = stmt.Close()
-			tb.Fatalf("copy exec failed at row %d: %v", i, err)
-		}
-	}
-
-	// Flush COPY
-	if _, err := stmt.ExecContext(ctx); err != nil {
-		_ = stmt.Close()
-		tb.Fatalf("copy flush failed: %v", err)
-	}
-	if err := stmt.Close(); err != nil {
-		tb.Fatalf("copy close failed: %v", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		tb.Fatalf("commit failed: %v", err)
-	}
-}
-
-func BenchmarkInsert1M_IntPK(b *testing.B) {
-	setupSchema(b)
-
+func BenchmarkInsertUUIDv4PkDBGen(b *testing.B) {
+	var err error
 	for b.Loop() {
-		b.StopTimer()
-		truncateTable(b, intTable, true)
-		b.StartTimer()
+		err = truncateTable("bench_uuid_pk")
+		if err != nil {
+			b.Fatal(err)
+		}
 
-		copyInsertAges(b, intTable, rowCount)
+		err = insertUUIDv4PkDBGen(numRows)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
-func BenchmarkInsert1M_UUIDPK(b *testing.B) {
-	setupSchema(b)
-
+func BenchmarkInsertUUIDv4PkAppGen(b *testing.B) {
+	var err error
 	for b.Loop() {
-		b.StopTimer()
-		truncateTable(b, uuidTable, false)
-		b.StartTimer()
+		err = truncateTable("bench_uuid_pk")
+		if err != nil {
+			b.Fatal(err)
+		}
 
-		copyInsertAges(b, uuidTable, rowCount)
+		err = insertUUIDv4PkAppGen(numRows)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
+}
+
+func BenchmarkInsertUUIDv7PkAppGen(b *testing.B) {
+	var err error
+	for b.Loop() {
+		err = truncateTable("bench_uuid_pk")
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		err = insertUUIDv7PkAppGen(numRows)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func truncateTable(tableName string) error {
+	_, err := db.Exec(`TRUNCATE TABLE ` + tableName)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// insertIntPk inserts numRows into the bench_int_pk table, which uses `BIGSERIAL` as the primary key.
+func insertIntPk(numRows int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Commit()
+
+	// Use COPY command for better performance when inserting a large number of rows.
+	// https://stackoverflow.com/questions/46715354/how-does-copy-work-and-why-is-it-so-much-faster-than-insert
+	stmt, err := tx.Prepare(pq.CopyIn("bench_int_pk", "age"))
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for i := range numRows {
+		_, err := stmt.Exec(i)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// insertUUIDv4PkDBGen inserts numRows into the bench_uuid_pk table using the database generated UUIDv4.
+func insertUUIDv4PkDBGen(numRows int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Commit()
+
+	stmt, err := tx.Prepare(pq.CopyIn("bench_uuid_pk", "age"))
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for i := range numRows {
+		_, err := stmt.Exec(i)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// insertUUIDv4PkAppGen inserts numRows into the bench_uuid_pk table using the application generated UUIDv4.
+func insertUUIDv4PkAppGen(numRows int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Commit()
+
+	stmt, err := tx.Prepare(pq.CopyIn("bench_uuid_pk", "id", "age"))
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for i := range numRows {
+		id, _ := uuid.NewRandom()
+		_, err := stmt.Exec(id, i)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// insertUUIDv7PkAppGen inserts numRows into the bench_uuid_pk table using the application generated UUIDv7.
+func insertUUIDv7PkAppGen(numRows int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Commit()
+
+	stmt, err := tx.Prepare(pq.CopyIn("bench_uuid_pk", "id", "age"))
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for i := range numRows {
+		id, _ := uuid.NewV7()
+		_, err = stmt.Exec(id, i)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

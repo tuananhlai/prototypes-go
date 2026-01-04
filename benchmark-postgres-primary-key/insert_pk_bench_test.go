@@ -115,7 +115,7 @@ func insertIntPk(numRows int) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Commit()
+	defer tx.Rollback()
 
 	// Use COPY command for better performance when inserting a large number of rows.
 	// https://stackoverflow.com/questions/46715354/how-does-copy-work-and-why-is-it-so-much-faster-than-insert
@@ -123,7 +123,6 @@ func insertIntPk(numRows int) error {
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
 
 	for i := range numRows {
 		_, err := stmt.Exec(i)
@@ -132,7 +131,17 @@ func insertIntPk(numRows int) error {
 		}
 	}
 
-	return nil
+	_, err = stmt.Exec()
+	if err != nil {
+		return err
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // insertUUIDv4PkDBGen inserts numRows into the bench_uuid_pk table using the database generated UUIDv4.
@@ -141,13 +150,12 @@ func insertUUIDv4PkDBGen(numRows int) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Commit()
+	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(pq.CopyIn("bench_uuid_pk", "age"))
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
 
 	for i := range numRows {
 		_, err := stmt.Exec(i)
@@ -156,7 +164,17 @@ func insertUUIDv4PkDBGen(numRows int) error {
 		}
 	}
 
-	return nil
+	_, err = stmt.Exec()
+	if err != nil {
+		return err
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // insertUUIDv4PkAppGen inserts numRows into the bench_uuid_pk table using the application generated UUIDv4.
@@ -165,13 +183,12 @@ func insertUUIDv4PkAppGen(numRows int) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Commit()
+	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(pq.CopyIn("bench_uuid_pk", "id", "age"))
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
 
 	for i := range numRows {
 		id, _ := uuid.NewRandom()
@@ -181,7 +198,17 @@ func insertUUIDv4PkAppGen(numRows int) error {
 		}
 	}
 
-	return nil
+	_, err = stmt.Exec()
+	if err != nil {
+		return err
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // insertUUIDv7PkAppGen inserts numRows into the bench_uuid_pk table using the application generated UUIDv7.
@@ -190,13 +217,12 @@ func insertUUIDv7PkAppGen(numRows int) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Commit()
+	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(pq.CopyIn("bench_uuid_pk", "id", "age"))
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
 
 	for i := range numRows {
 		id, _ := uuid.NewV7()
@@ -206,5 +232,15 @@ func insertUUIDv7PkAppGen(numRows int) error {
 		}
 	}
 
-	return nil
+	_, err = stmt.Exec()
+	if err != nil {
+		return err
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

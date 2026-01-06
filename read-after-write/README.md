@@ -1,0 +1,1 @@
+With multiple database replicas, changes might not be propagated to all nodes when a read request came. To ensure smooth UX, a "read after write" mechanism need to be in place so that the user sees the newest data they've written.

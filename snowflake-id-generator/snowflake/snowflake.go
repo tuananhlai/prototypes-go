@@ -37,7 +37,6 @@ func (node *Node) Generate() uint64 {
 	defer node.mu.Unlock()
 
 	timeMillis := time.Now().UnixMilli()
-
 	// We need to use a loop for waiting and retrying logic once our counter (sequence) maxed out.
 	for {
 		if timeMillis == node.lastMillis && node.counter == maxCounter {
@@ -55,6 +54,7 @@ func (node *Node) Generate() uint64 {
 		break
 	}
 
+	// TODO: consider safety of the following conversion.
 	timeMillisBits := uint64(timeMillis << timeShift)
 	machineIDBits := node.machineID << machineShift
 	counterBits := node.counter & counterMask

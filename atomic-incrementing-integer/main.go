@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -14,9 +15,18 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer func() {
+		if err := id.Close(); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	for range 7 {
-		fmt.Println(id.Generate())
+		value, err := id.Generate()
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(value)
 	}
 }
 
@@ -37,9 +47,13 @@ func NewAtomicID() (*AtomicID, error) {
 
 	flushFrequency := uint64(10)
 
-	// TODO: immediately write the start ID to the file.
 	startID, err := getStartID(file, flushFrequency)
 	if err != nil {
+		return nil, err
+	}
+	// persist the start id immediately in case the process crashed before
+	// the next flush.
+	if err := writeID(file, startID); err != nil {
 		return nil, err
 	}
 
@@ -68,36 +82,43 @@ func (ai *AtomicID) Generate() (uint64, error) {
 	return newID, nil
 }
 
+func (ai *AtomicID) Close() error {
+	return ai.file.Close()
+}
+
 // flushID writes the last generated ID to a file.
 func (ai *AtomicID) flushID() error {
-	if _, err := ai.file.Seek(0, 0); err != nil {
-		return err
-	}
-	if err := ai.file.Truncate(0); err != nil {
-		return err
-	}
-	_, err := ai.file.WriteString(strconv.FormatUint(ai.lastGeneratedID, 10))
-	if err != nil {
-		return err
-	}
+	return writeID(ai.file, ai.lastGeneratedID)
+}
 
-	return ai.file.Sync()
+func writeID(file *os.File, id uint64) error {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	if err := file.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := file.WriteString(strconv.FormatUint(id, 10)); err != nil {
+		return err
+	}
+	return file.Sync()
 }
 
 // Read the last generated ID from the given file, and determine the next safe ID to generate
 // based on the flush frequency.
 func getStartID(file *os.File, flushFrequency uint64) (uint64, error) {
-	if _, err := file.Seek(0, 0); err != nil {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return 0, err
 	}
 	lastFlushedIDBytes, err := io.ReadAll(file)
 	if err != nil {
 		return 0, err
 	}
-	if len(lastFlushedIDBytes) == 0 {
+	trimmed := strings.TrimSpace(string(lastFlushedIDBytes))
+	if trimmed == "" {
 		return 0, nil
 	}
-	lastFlushedID, err := strconv.ParseUint(string(lastFlushedIDBytes), 10, 64)
+	lastFlushedID, err := strconv.ParseUint(trimmed, 10, 64)
 	if err != nil {
 		return 0, err
 	}

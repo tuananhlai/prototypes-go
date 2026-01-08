@@ -2,78 +2,57 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
-	"os"
 
 	"golang.org/x/sys/unix"
 )
 
-func dialTCPNoNetDial(addr string) (*os.File, error) {
-	host, portStr, err := net.SplitHostPort(addr)
-	if err != nil {
-		return nil, err
-	}
-	var port int
-	_, err = fmt.Sscanf(portStr, "%d", &port)
-	if err != nil {
-		return nil, err
-	}
-
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return nil, err
-	}
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("no IPs for host %q", host)
-	}
-
-	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_TCP)
-	if err != nil {
-		return nil, err
-	}
-
-	// If connect fails, close the fd.
-	ok := false
-	defer func() {
-		if !ok {
-			_ = unix.Close(fd)
-		}
-	}()
-
-	ip4 := ips[0].To4()
-	if ip4 == nil {
-		return nil, fmt.Errorf("only IPv4 shown here (got %v)", ips[0])
-	}
-
-	sa := &unix.SockaddrInet4{Port: port}
-	copy(sa.Addr[:], ip4)
-
-	if err := unix.Connect(fd, sa); err != nil {
-		return nil, err
-	}
-
-	ok = true
-	// Wrap fd as *os.File (you can unix.Read/Write directly too)
-	return os.NewFile(uintptr(fd), "tcp:"+addr), nil
-}
-
 func main() {
-	f, err := dialTCPNoNetDial("example.com:80")
+	host := "example.com"
+	port := 80
+
+	// Creates a new socket and returns its file descriptor.
+	// - `domain` (`unix.AF_INET`): address family. `AF_INET` means IPv4. Use `AF_INET6` for IPv6, `AF_UNIX`
+	// for Unix domain sockets, etc.
+	// - `typ` (`unix.SOCK_STREAM`): socket type. `SOCK_STREAM` gives you a reliable, ordered byte stream (TCP).
+	// `SOCK_DGRAM` would be UDP datagrams.
+	// - `proto` (`0`): protocol number. `0` means “default for this domain+type”. For `AF_INET` + `SOCK_STREAM`,
+	// the kernel picks TCP (`IPPROTO_TCP`). You could also pass `unix.IPPROTO_TCP` explicitly.
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
-	defer f.Close()
 
-	_, _ = f.WriteString("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+	ipAddr, err := net.ResolveIPAddr("ip", host)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	buf := make([]byte, 4096)
+	err = unix.Connect(fd, &unix.SockaddrInet4{
+		Addr: [4]byte(ipAddr.IP),
+		Port: port,
+	})
+
+	body := []byte("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+	_, err = unix.Write(fd, body)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var resp []byte
+
+	buf := make([]byte, 256)
 	for {
-		n, err := f.Read(buf)
-		if n > 0 {
-			fmt.Print(string(buf[:n]))
-		}
+		n, err := unix.Read(fd, buf)
 		if err != nil {
+			log.Fatal(err)
+		}
+		if n == 0 {
 			break
 		}
+		resp = append(resp, buf[:n]...)
 	}
+
+	fmt.Println(string(resp))
 }

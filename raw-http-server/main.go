@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -46,19 +47,12 @@ func handleConnection(conn *net.TCPConn) {
 
 	r := bufio.NewReader(conn)
 
-	// we can't use io.ReadAll here. io.ReadAll will wait for io.EOF, which will never come
-	// unless the http client closes the connection themselves.
-	// req, err := r.ReadString('\n')
-	// if err != nil {
-	// 	log.Println("error reading request:", err)
-	// 	return
-	// }
 	req, err := parse(r)
 	if err != nil {
 		log.Println("error closing read:", err)
 		return
 	}
-	log.Println(req)
+	log.Printf("request: %+v, body: %s", req, string(req.Body()))
 
 	err = conn.CloseRead()
 	if err != nil {
@@ -73,23 +67,61 @@ func handleConnection(conn *net.TCPConn) {
 	}
 }
 
+type Method string
+
+const (
+	MethodGet     Method = "GET"
+	MethodPost    Method = "POST"
+	MethodPut     Method = "PUT"
+	MethodDelete  Method = "DELETE"
+	MethodPatch   Method = "PATCH"
+	MethodOptions Method = "OPTIONS"
+)
+
+var (
+	validMethods = map[Method]bool{
+		MethodGet:     true,
+		MethodPost:    true,
+		MethodPut:     true,
+		MethodDelete:  true,
+		MethodPatch:   true,
+		MethodOptions: true,
+	}
+)
+
 type Request struct {
-	Method  string
-	Path    string
-	Headers map[string]string
-	Body    []byte
+	method  Method
+	path    string
+	headers map[string]string
+	body    []byte
+}
+
+func (r *Request) Header(key string) string {
+	return r.headers[strings.ToLower(key)]
+}
+
+func (r *Request) Method() Method {
+	return r.method
+}
+
+func (r *Request) Body() []byte {
+	return r.body
+}
+
+func (r *Request) Path() string {
+	return r.path
 }
 
 func parse(reader *bufio.Reader) (*Request, error) {
 	var r Request
 
-	methodLine, err := reader.ReadString('\n')
+	requestLine, err := reader.ReadString('\n')
 	if err != nil {
 		return nil, err
 	}
-	log.Println(methodLine)
+	log.Println(requestLine)
 
-	r.Method, r.Path, err = parseMethodLine(methodLine)
+	r.method, r.path, err = parseRequestLine(requestLine)
 	if err != nil {
 		return nil, err
 	}
@@ -113,21 +145,40 @@ func parse(reader *bufio.Reader) (*Request, error) {
 		}
 		headers[key] = value
 	}
-	r.Headers = headers
+	r.headers = headers
+
+	contentLength := r.Header("Content-Length")
+	if contentLength != "" {
+		length, err := strconv.Atoi(contentLength)
+		if err != nil {
+			return nil, fmt.Errorf("invalid content length: %s", contentLength)
+		}
+
+		r.body = make([]byte, length)
+		_, err = io.ReadFull(reader, r.body)
+		if err != nil {
+			return nil, fmt.Errorf("error reading body: %w", err)
+		}
+	}
 
 	return &r, nil
 }
 
-func parseMethodLine(methodLine string) (method string, path string, err error) {
-	parts := strings.Split(strings.TrimSpace(methodLine), " ")
+// parseRequestLine ...
+// Example input: GET / HTTP/1.1
+func parseRequestLine(requestLine string) (method Method, path string, err error) {
+	parts := strings.Split(strings.TrimSpace(requestLine), " ")
 	if len(parts) != 3 {
-		return "", "", fmt.Errorf("invalid method line: %s", methodLine)
+		return "", "", fmt.Errorf("invalid method line: %s", requestLine)
 	}
 
-	method = parts[0]
 	path = parts[1]
-	httpVersion := parts[2]
+	method, err = parseMethod(parts[0])
+	if err != nil {
+		return "", "", err
+	}
 
+	httpVersion := parts[2]
 	if httpVersion != "HTTP/1.1" {
 		return "", "", fmt.Errorf("unsupported HTTP version: %s", httpVersion)
 	}
@@ -135,11 +186,29 @@ func parseMethodLine(methodLine string) (method string, path string, err error) 
 	return method, path, nil
 }
 
+// parseMethod ...
+func parseMethod(method string) (Method, error) {
+	if !validMethods[Method(method)] {
+		return "", fmt.Errorf("invalid method: %s", method)
+	}
+	return Method(method), nil
+}
+
+// parseHeader ...
+// Example input: Content-Length: 100
 func parseHeader(headerLine string) (key, value string, err error) {
 	parts := strings.SplitN(headerLine, ":", 2)
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("invalid header line: %s", headerLine)
 	}
 
-	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), nil
+	// HTTP header name is case-insensitive, so we'll normalize it to lowercase.
+	key = strings.ToLower(parts[0])
+	// HTTP header name does not allow preceding or trailing whitespace, so
+	if strings.Contains(key, " ") {
+		return "", "", fmt.Errorf("invalid header name: %s", key)
+	}
+
+	value = strings.TrimSpace(parts[1])
+	return key, value, nil
 }

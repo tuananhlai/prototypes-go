@@ -6,8 +6,10 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -38,32 +40,53 @@ func main() {
 }
 
 func handleConnection(conn *net.TCPConn) {
+	// Set a read deadline to prevent the connection from being kept open
+	// indefinitely when the client stops sending requests.
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+
 	defer func() {
 		err := conn.Close()
 		if err != nil {
-			log.Println("error closing write:", err)
+			log.Println("error closing connection:", err)
 		}
 	}()
 
 	r := bufio.NewReader(conn)
 
-	req, err := parse(r)
-	if err != nil {
-		log.Println("error closing read:", err)
-		return
-	}
-	log.Printf("request: %+v, body: %s", req, string(req.Body()))
+	for {
+		req, err := parse(r)
+		if err != nil {
+			// EOF means client closed the connection
+			if err == io.EOF {
+				log.Println("client closed connection")
+			} else {
+				log.Println("error parsing request:", err)
+			}
+			return
+		}
+		log.Printf("request: %+v, body: %s", req, string(req.Body()))
 
-	err = conn.CloseRead()
-	if err != nil {
-		log.Println("error closing read:", err)
-		return
-	}
+		// In HTTP/1.1, keep-alive is default unless Connection: close is present
+		connection := req.Header("connection")
+		keepAlive := connection == "keep-alive"
 
-	_, err = io.WriteString(conn, "HTTP/1.1 200 OK\r\n\r\n")
-	if err != nil {
-		log.Println("error writing response:", err)
-		return
+		// Write response with appropriate Connection header
+		err = writeResponse(conn, 200, []byte("OK"), keepAlive)
+		if err != nil {
+			log.Println("error writing response:", err)
+			return
+		}
+
+		// If client explicitly requested close, close the connection
+		if connection == "close" {
+			return
+		}
+
+		// For keep-alive, continue to read the next request
+		// The connection will be closed if:
+		// 1. Client sends Connection: close
+		// 2. Client closes the connection (EOF)
+		// 3. An error occurs during parsing
 	}
 }
 
@@ -112,6 +135,7 @@ func (r *Request) Path() string {
 	return r.path
 }
 
+// parse transforms the raw HTTP request into a Request object.
 func parse(reader *bufio.Reader) (*Request, error) {
 	var r Request
 
@@ -160,7 +184,6 @@ func parse(reader *bufio.Reader) (*Request, error) {
 			return nil, fmt.Errorf("error reading body: %w", err)
 		}
 	}
-
 	return &r, nil
 }
 
@@ -211,4 +234,23 @@ func parseHeader(headerLine string) (key, value string, err error) {
 
 	value = strings.TrimSpace(parts[1])
 	return key, value, nil
+}
+
+// writeResponse writes the HTTP response to the TCP connection.
+// If keepAlive is true, includes Connection: keep-alive header.
+func writeResponse(conn *net.TCPConn, status int, body []byte, keepAlive bool) error {
+	fmt.Fprintf(conn, "HTTP/1.1 %d %s\r\n", status, http.StatusText(status))
+	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(body))
+	if keepAlive {
+		fmt.Fprintf(conn, "Connection: keep-alive\r\n")
+	} else {
+		fmt.Fprintf(conn, "Connection: close\r\n")
+	}
+	fmt.Fprintf(conn, "\r\n")
+
+	_, err := conn.Write(body)
+	if err != nil {
+		return fmt.Errorf("error writing response: %w", err)
+	}
+	return nil
 }

@@ -97,7 +97,9 @@ func (wc *WebsocketConn) ReadMessage() ([]byte, error) {
 		return nil, fmt.Errorf("failed to read header: %w", err)
 	}
 
-	// what is a mask key?
+	// A mask key which is used to decode the client payload.
+	// It was created to prevent proxies and other intermediaries from mistaking WebSocket
+	// traffic for normal HTTP and applying unsafe behavior.
 	maskKey := make([]byte, 4)
 	_, err = wc.connRW.Read(maskKey)
 	if err != nil {
@@ -112,6 +114,7 @@ func (wc *WebsocketConn) ReadMessage() ([]byte, error) {
 		return nil, fmt.Errorf("failed to read payload: %w", err)
 	}
 
+	// Unmask (decode) the client payload.
 	for i := range payloadLen {
 		payload[i] ^= maskKey[i%4]
 	}
@@ -121,28 +124,27 @@ func (wc *WebsocketConn) ReadMessage() ([]byte, error) {
 
 func (wc *WebsocketConn) WriteMessage(message []byte) error {
 	// Data framing / Packet structure: https://datatracker.ietf.org/doc/html/rfc6455#section-5
-	payload := []byte(message)
-	payloadLen := len(payload)
+	messageLen := len(message)
 	header := []byte{0x81, 0}
 
-	if payloadLen <= 125 {
-		header[1] = byte(payloadLen)
-	} else if payloadLen <= 65535 {
+	if messageLen <= 125 {
+		header[1] = byte(messageLen)
+	} else if messageLen <= 65535 {
 		header[1] = 126
 		lenBuf := make([]byte, 2)
-		binary.BigEndian.PutUint16(lenBuf, uint16(payloadLen))
+		binary.BigEndian.PutUint16(lenBuf, uint16(messageLen))
 		header = append(header, lenBuf...)
 	} else {
 		header[1] = 127
 		lenBuf := make([]byte, 8)
-		binary.BigEndian.PutUint64(lenBuf, uint64(payloadLen))
+		binary.BigEndian.PutUint64(lenBuf, uint64(messageLen))
 		header = append(header, lenBuf...)
 	}
 
 	if _, err := wc.connRW.Write(header); err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
 	}
-	if _, err := wc.connRW.Write(payload); err != nil {
+	if _, err := wc.connRW.Write(message); err != nil {
 		return fmt.Errorf("failed to write payload: %w", err)
 	}
 

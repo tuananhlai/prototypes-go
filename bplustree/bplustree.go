@@ -1,6 +1,6 @@
 package bplustree
 
-// BPlusTree is a minimal B+ tree for integer keys with interface{} values.
+// BPlusTree is a minimal B+ tree for integer keys with any values.
 // It supports Insert and Get. Delete and rebalancing are intentionally omitted.
 type BPlusTree struct {
 	order int
@@ -11,7 +11,7 @@ type node struct {
 	isLeaf   bool
 	keys     []int
 	children []*node
-	values   []interface{}
+	values   []any
 	next     *node
 }
 
@@ -27,7 +27,7 @@ func New(order int) *BPlusTree {
 }
 
 // Get returns the value for key if present.
-func (t *BPlusTree) Get(key int) (interface{}, bool) {
+func (t *BPlusTree) Get(key int) (any, bool) {
 	if t.root == nil {
 		return nil, false
 	}
@@ -41,7 +41,7 @@ func (t *BPlusTree) Get(key int) (interface{}, bool) {
 }
 
 // Insert inserts or replaces the value for key.
-func (t *BPlusTree) Insert(key int, value interface{}) {
+func (t *BPlusTree) Insert(key int, value any) {
 	if t.root == nil {
 		t.root = &node{isLeaf: true}
 	}
@@ -68,7 +68,7 @@ func findLeaf(n *node, key int) *node {
 	return n
 }
 
-func insertIntoLeaf(leaf *node, key int, value interface{}) {
+func insertIntoLeaf(leaf *node, key int, value any) {
 	i := 0
 	for i < len(leaf.keys) && leaf.keys[i] < key {
 		i++
@@ -90,7 +90,7 @@ func splitLeaf(leaf *node, order int) (int, *node) {
 	right := &node{
 		isLeaf: true,
 		keys:   append([]int(nil), leaf.keys[split:]...),
-		values: append([]interface{}(nil), leaf.values[split:]...),
+		values: append([]any(nil), leaf.values[split:]...),
 		next:   leaf.next,
 	}
 	leaf.keys = leaf.keys[:split]

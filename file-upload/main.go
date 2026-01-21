@@ -8,32 +8,51 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 )
 
 const (
-	addr = ":8080"
+	addr       = ":8080"
+	s3Endpoint = "http://localhost:9000"
+	bucketName = "tweet-images"
 )
 
 func main() {
 	globalCtx := context.Background()
-	s3Config, err := config.LoadDefaultConfig(globalCtx)
+	credentialsProvider := credentials.NewStaticCredentialsProvider("minio", "minio123", "")
+	s3Config, err := config.LoadDefaultConfig(
+		globalCtx,
+		config.WithRegion("us-east-1"),
+		config.WithCredentialsProvider(credentialsProvider),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	s3Client := s3.NewFromConfig(s3Config, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(s3Endpoint)
 		o.UsePathStyle = true
+		o.Credentials = aws.NewCredentialsCache(credentialsProvider)
 	})
 	presigner := s3.NewPresignClient(s3Client)
+
+	if err := ensureBucket(globalCtx, s3Client, bucketName); err != nil {
+		log.Fatal(err)
+	}
 
 	tweetRepo := NewTweetRepo()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /tweets:prepare-image-upload", func(w http.ResponseWriter, r *http.Request) {
-		post, err := presigner.PresignPostObject(r.Context(), &s3.PutObjectInput{}, func(ppo *s3.PresignPostOptions) {
+		imageID := uuid.NewString()
+		post, err := presigner.PresignPostObject(r.Context(), &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    &imageID,
+		}, func(ppo *s3.PresignPostOptions) {
 			ppo.Expires = 15 * time.Minute
 		})
 		if err != nil {
@@ -42,7 +61,9 @@ func main() {
 		}
 
 		json.NewEncoder(w).Encode(PrepareTweetImageUploadResponse{
-			URL: post.URL,
+			ImageID: imageID,
+			URL:     post.URL,
+			Fields:  post.Values,
 		})
 	})
 	mux.HandleFunc("POST /tweets", func(w http.ResponseWriter, r *http.Request) {
@@ -69,22 +90,44 @@ func main() {
 		}
 
 		json.NewEncoder(w).Encode(ListTweetsResponse{
-			items: resTweets,
+			Items: resTweets,
 		})
 	})
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "index.html")
+	})
 
+	log.Println("Start server on", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func generateImageURL(imageID string) string {
-	return fmt.Sprintf("https://example.com/images/%s", imageID)
+	if imageID == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s/%s", s3Endpoint, bucketName, imageID)
+}
+
+func ensureBucket(ctx context.Context, client *s3.Client, bucketName string) error {
+	_, err := client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: &bucketName,
+	})
+	if err == nil {
+		return nil
+	}
+
+	_, err = client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: &bucketName,
+	})
+	return err
 }
 
 type PrepareTweetImageUploadResponse struct {
-	ImageID string `json:"imageId"`
-	URL     string `json:"url"`
+	ImageID string            `json:"imageId"`
+	URL     string            `json:"url"`
+	Fields  map[string]string `json:"fields"`
 }
 
 type CreateTweetRequest struct {
@@ -100,7 +143,7 @@ type CreateTweetResponse struct {
 }
 
 type ListTweetsResponse struct {
-	items []Tweet
+	Items []Tweet `json:"items"`
 }
 
 type Tweet struct {

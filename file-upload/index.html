@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tweet Upload Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f5f7;
+        --card: #ffffff;
+        --text: #1b1c1d;
+        --muted: #5f6368;
+        --accent: #0b5fff;
+        --border: #e2e5e9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+        background: radial-gradient(circle at top left, #ffffff 0%, #f0f2f6 40%, #e6eaf0 100%);
+        color: var(--text);
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 28px;
+      }
+      h1 {
+        font-size: 2.2rem;
+        margin: 0;
+        letter-spacing: -0.02em;
+      }
+      .tagline {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 18px 40px rgba(16, 24, 40, 0.08);
+      }
+      form {
+        display: grid;
+        gap: 16px;
+      }
+      label {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+      textarea,
+      input[type="text"] {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        padding: 12px 14px;
+        font-size: 1rem;
+        font-family: inherit;
+        background: #fafafa;
+      }
+      .row {
+        display: grid;
+        gap: 12px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      button {
+        border: none;
+        background: var(--accent);
+        color: #ffffff;
+        padding: 10px 16px;
+        border-radius: 999px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 20px rgba(11, 95, 255, 0.25);
+      }
+      button[disabled] {
+        cursor: not-allowed;
+        opacity: 0.6;
+        box-shadow: none;
+        transform: none;
+      }
+      .secondary {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+      .status {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      .feed {
+        margin-top: 32px;
+        display: grid;
+        gap: 16px;
+      }
+      .tweet {
+        padding: 16px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: #ffffff;
+        display: grid;
+        gap: 8px;
+      }
+      .tweet small {
+        color: var(--muted);
+      }
+      .tweet img {
+        max-width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+      }
+      .error {
+        color: #b42318;
+        font-weight: 600;
+      }
+      .hint {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      @media (min-width: 720px) {
+        .row {
+          grid-template-columns: repeat(2, 1fr);
+          align-items: end;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Tweet upload prototype</h1>
+          <div class="tagline">Upload to S3-compatible storage, then create a tweet.</div>
+        </div>
+        <div class="status" id="serverStatus">API: unknown</div>
+      </header>
+
+      <section class="card">
+        <form id="tweetForm">
+          <div class="row">
+            <div>
+              <label for="content">Tweet content</label>
+              <textarea id="content" rows="4" placeholder="What is happening?" required></textarea>
+            </div>
+            <div>
+              <label for="file">Image (optional)</label>
+              <input id="file" type="file" accept="image/*" />
+              <div class="hint">Uses presigned POST. Make sure your S3 bucket + CORS are ready.</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="submit" id="submitBtn">Post tweet</button>
+            <button type="button" class="secondary" id="refreshBtn">Refresh feed</button>
+            <span class="status" id="formStatus"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="feed" id="feed"></section>
+    </main>
+
+    <script>
+      const apiBase = "http://localhost:8080";
+      const serverStatus = document.getElementById("serverStatus");
+      const feed = document.getElementById("feed");
+      const formStatus = document.getElementById("formStatus");
+      const submitBtn = document.getElementById("submitBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
+
+      async function apiRequest(path, options = {}) {
+        const response = await fetch(`${apiBase}${path}`, {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          ...options,
+        });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || `Request failed: ${response.status}`);
+        }
+        return response;
+      }
+
+      async function checkServer() {
+        try {
+          await apiRequest("/tweets", { method: "GET" });
+          serverStatus.textContent = "API: online";
+        } catch (error) {
+          serverStatus.textContent = "API: offline";
+          serverStatus.classList.add("error");
+        }
+      }
+
+      function renderTweets(tweets = []) {
+        feed.innerHTML = "";
+        if (tweets.length === 0) {
+          feed.innerHTML = "<div class=\"status\">No tweets yet.</div>";
+          return;
+        }
+        tweets.forEach((tweet) => {
+          const card = document.createElement("article");
+          card.className = "tweet";
+          const createdAt = tweet.createdAt ? new Date(tweet.createdAt).toLocaleString() : "";
+          card.innerHTML = `
+            <strong>${escapeHtml(tweet.content || "")}</strong>
+            ${tweet.imageUrl ? `<img src="${tweet.imageUrl}" alt="tweet image" />` : ""}
+            <small>${createdAt}</small>
+          `;
+          feed.appendChild(card);
+        });
+      }
+
+      function escapeHtml(value) {
+        const div = document.createElement("div");
+        div.textContent = value;
+        return div.innerHTML;
+      }
+
+      async function fetchTweets() {
+        try {
+          const response = await apiRequest("/tweets", { method: "GET" });
+          const data = await response.json();
+          renderTweets(data.items || []);
+        } catch (error) {
+          renderTweets([]);
+          formStatus.textContent = error.message;
+          formStatus.classList.add("error");
+        }
+      }
+
+      async function uploadImage(file) {
+        const response = await apiRequest("/tweets:prepare-image-upload", { method: "POST" });
+        const data = await response.json();
+        if (!data.url || !data.imageId || !data.fields) {
+          throw new Error("Presigned upload response missing url/imageId");
+        }
+
+        const formData = new FormData();
+        Object.entries(data.fields).forEach(([key, value]) => {
+          formData.append(key, value);
+        });
+        formData.append("file", file);
+
+        const uploadResponse = await fetch(data.url, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadResponse.ok) {
+          const message = await uploadResponse.text();
+          throw new Error(message || "Upload failed");
+        }
+
+        return data.imageId;
+      }
+
+      document.getElementById("tweetForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        formStatus.classList.remove("error");
+        formStatus.textContent = "";
+        submitBtn.disabled = true;
+        refreshBtn.disabled = true;
+
+        try {
+          const content = document.getElementById("content").value.trim();
+          if (!content) {
+            throw new Error("Tweet content required");
+          }
+
+          const file = document.getElementById("file").files[0];
+          let imageId = "";
+          if (file) {
+            formStatus.textContent = "Uploading image...";
+            imageId = await uploadImage(file);
+          }
+
+          formStatus.textContent = "Creating tweet...";
+          await apiRequest("/tweets", {
+            method: "POST",
+            body: JSON.stringify({ content, imageId }),
+          });
+
+          formStatus.textContent = "Tweet created.";
+          document.getElementById("content").value = "";
+          document.getElementById("file").value = "";
+          await fetchTweets();
+        } catch (error) {
+          formStatus.textContent = error.message;
+          formStatus.classList.add("error");
+        } finally {
+          submitBtn.disabled = false;
+          refreshBtn.disabled = false;
+        }
+      });
+
+      refreshBtn.addEventListener("click", fetchTweets);
+
+      checkServer();
+      fetchTweets();
+    </script>
+  </body>
+</html>

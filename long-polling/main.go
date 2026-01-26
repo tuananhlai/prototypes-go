@@ -36,6 +36,7 @@ func pollHandler(w http.ResponseWriter, r *http.Request) {
 		messageChan <- fmt.Sprintf("Current time is: %s", time.Now())
 	}()
 
+	// Hold the HTTP connection until either a new message for responding came,
 	select {
 	case msg := <-messageChan:
 		w.Write([]byte(msg))

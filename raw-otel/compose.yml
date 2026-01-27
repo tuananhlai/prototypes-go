@@ -1,0 +1,7 @@
+services:
+  otel:
+    image: grafana/otel-lgtm:latest
+    ports:
+      - "13000:3000" # Grafana
+      - "14317:4317" # OTLP gRPC
+      - "14318:4318" # OTLP HTTP

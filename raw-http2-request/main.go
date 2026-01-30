@@ -27,7 +27,7 @@ func main() {
 		log.Fatalf("error writing HTTP/2 preamble: %v", err)
 	}
 
-	if err := writeFrame(conn, FrameTypeSettings, FlagEmpty, 0, nil); err != nil {
+	if err := writeFrame(conn, frameTypeSettings, flagEmpty, 0, nil); err != nil {
 		log.Fatalf("error writing frame: %v", err)
 	}
 
@@ -46,7 +46,7 @@ func main() {
 		}
 	}
 
-	if err := writeFrame(conn, FrameTypeHeaders, FlagEndStream|FlagEndHeaders, 1, hb.Bytes()); err != nil {
+	if err := writeFrame(conn, frameTypeHeaders, flagEndStream|flagEndHeaders, 1, hb.Bytes()); err != nil {
 		log.Fatalf("error writing frame: %v", err)
 	}
 
@@ -61,7 +61,7 @@ func main() {
 }
 
 // writeFrame ...
-func writeFrame(w io.Writer, typ FrameType, flags Flag, streamID uint32, payload []byte) error {
+func writeFrame(w io.Writer, typ byte, flags byte, streamID uint32, payload []byte) error {
 	frame, err := newFrame(typ, flags, streamID, payload)
 	if err != nil {
 		return fmt.Errorf("error creating frame: %w", err)
@@ -74,46 +74,43 @@ func writeFrame(w io.Writer, typ FrameType, flags Flag, streamID uint32, payload
 	return nil
 }
 
-type FrameType byte
-type Flag byte
-
 const (
-	FrameTypeData         FrameType = 0x0
-	FrameTypeHeaders      FrameType = 0x1
-	FrameTypePriority     FrameType = 0x2
-	FrameTypeRSTStream    FrameType = 0x3
-	FrameTypeSettings     FrameType = 0x4
-	FrameTypePushPromise  FrameType = 0x5
-	FrameTypePing         FrameType = 0x6
-	FrameTypeGoAway       FrameType = 0x7
-	FrameTypeWindowUpdate FrameType = 0x8
-	FrameTypeContinuation FrameType = 0x9
+	frameTypeData         byte = 0x0
+	frameTypeHeaders      byte = 0x1
+	frameTypePriority     byte = 0x2
+	frameTypeRSTStream    byte = 0x3
+	frameTypeSettings     byte = 0x4
+	frameTypePushPromise  byte = 0x5
+	frameTypePing         byte = 0x6
+	frameTypeGoAway       byte = 0x7
+	frameTypeWindowUpdate byte = 0x8
+	frameTypeContinuation byte = 0x9
 
-	FlagEmpty      Flag = 0x0
-	FlagEndStream  Flag = 0x1
-	FlagACK        Flag = 0x1
-	FlagEndHeaders Flag = 0x4
-	FlagPadded     Flag = 0x8
-	FlagPriority   Flag = 0x20
+	flagEmpty      byte = 0x0
+	flagEndStream  byte = 0x1
+	flagACK        byte = 0x1
+	flagEndHeaders byte = 0x4
+	flagPadded     byte = 0x8
+	flagPriority   byte = 0x20
 
-	FrameMaxLength   = 1<<24 - 1
-	FrameMaxStreamID = 1<<31 - 1
+	frameMaxLength   = 1<<24 - 1
+	frameMaxStreamID = 1<<31 - 1
 )
 
 type frame struct {
 	length    uint32
-	frameType FrameType
-	flags     Flag
+	frameType byte
+	flags     byte
 	streamID  uint32
 	payload   []byte
 }
 
 // newFrame ...
-func newFrame(typ FrameType, flags Flag, streamID uint32, payload []byte) (*frame, error) {
-	if len(payload) > FrameMaxLength {
+func newFrame(typ byte, flags byte, streamID uint32, payload []byte) (*frame, error) {
+	if len(payload) > frameMaxLength {
 		return nil, fmt.Errorf("error payload length exceeds maximum allowed")
 	}
-	if streamID > FrameMaxStreamID {
+	if streamID > frameMaxStreamID {
 		return nil, fmt.Errorf("error stream ID exceeds maximum allowed")
 	}
 

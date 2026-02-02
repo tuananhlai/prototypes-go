@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -50,14 +51,16 @@ func main() {
 		log.Fatalf("error writing frame: %v", err)
 	}
 
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil {
-		log.Fatalf("error reading response: %v", err)
+	for {
+		frame, err := parseFrame(conn)
+		if err != nil {
+			log.Fatalf("error parsing bytes into frame: %v", err)
+		}
+		log.Printf("%+v\n", frame)
+		if frame.frameType == frameTypeData {
+			log.Println(string(frame.payload))
+		}
 	}
-	log.Printf("%v", buf[:n])
-
-	// TODO: parse HTTP2 response
 }
 
 // writeFrame ...
@@ -98,7 +101,6 @@ const (
 )
 
 type frame struct {
-	length    uint32
 	frameType byte
 	flags     byte
 	streamID  uint32
@@ -115,7 +117,6 @@ func newFrame(typ byte, flags byte, streamID uint32, payload []byte) (*frame, er
 	}
 
 	return &frame{
-		length:    uint32(len(payload)),
 		frameType: typ,
 		flags:     flags,
 		streamID:  streamID,
@@ -123,12 +124,50 @@ func newFrame(typ byte, flags byte, streamID uint32, payload []byte) (*frame, er
 	}, nil
 }
 
+// parseFrame consumes bytes from the given reader and parse the bytes into
+// a frame struct.
+func parseFrame(r io.Reader) (*frame, error) {
+	frameHeaderLen := 9
+
+	frameHeader := make([]byte, frameHeaderLen)
+	n, err := r.Read(frameHeader)
+	if err != nil {
+		return nil, err
+	}
+	if n != frameHeaderLen {
+		return nil, fmt.Errorf("error frame header too short")
+	}
+
+	payloadLen := int(frameHeader[2]) | int(frameHeader[1])<<8 | int(frameHeader[0])<<16
+	frameType := frameHeader[3]
+	flags := frameHeader[4]
+	streamID := binary.BigEndian.Uint32(frameHeader[5:])
+
+	payload := make([]byte, payloadLen)
+	n, err = r.Read(payload)
+	if err != nil {
+		return nil, err
+	}
+	if n != payloadLen {
+		return nil, fmt.Errorf("error invalid payload length in frame header")
+	}
+
+	return &frame{
+		frameType: frameType,
+		flags:     flags,
+		streamID:  streamID,
+		payload:   payload,
+	}, nil
+}
+
 func (f *frame) Bytes() []byte {
+	payloadLen := len(f.payload)
+
 	b := make([]byte, 0, 9+len(f.payload))
 	b = append(b,
-		byte(f.length>>16),
-		byte(f.length>>8),
-		byte(f.length),
+		byte(payloadLen>>16),
+		byte(payloadLen>>8),
+		byte(payloadLen),
 		byte(f.frameType),
 		byte(f.flags),
 		byte(f.streamID>>24),
@@ -138,4 +177,8 @@ func (f *frame) Bytes() []byte {
 	)
 	b = append(b, f.payload...)
 	return b
+}
+
+func (f *frame) hasFlag(flag byte) bool {
+	return f.flags&flag != 0
 }

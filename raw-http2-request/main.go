@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 
 	"golang.org/x/net/http2/hpack"
 )
@@ -63,18 +64,39 @@ func main() {
 	}
 }
 
-// writeFrame ...
-func writeFrame(w io.Writer, typ byte, flags byte, streamID uint32, payload []byte) error {
-	frame, err := newFrame(typ, flags, streamID, payload)
+type Client struct {
+	streams      map[uint32]bool
+	lastStreamID uint32
+}
+
+func (c *Client) initConn(host string, port int) (net.Conn, error) {
+	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", host, port), &tls.Config{
+		ServerName: host,
+		NextProtos: []string{"h2"},
+	})
 	if err != nil {
-		return fmt.Errorf("error creating frame: %w", err)
+		return nil, err
 	}
 
-	_, err = w.Write(frame.Bytes())
-	if err != nil {
-		return fmt.Errorf("error writing frame: %w", err)
+	// Make sure that the server supports HTTP/2
+	if _, err := conn.Write([]byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("error writing HTTP/2 preamble: %v", err)
 	}
-	return nil
+
+	if err := writeFrame(conn, frameTypeSettings, flagEmpty, connectionControlStreamID, nil); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("error writing frame: %v", err)
+	}
+
+	return conn, nil
+}
+
+func (c *Client) Get(url string) (*Response, error) {
+
+}
+
+type Response struct {
 }
 
 const (
@@ -98,7 +120,24 @@ const (
 
 	frameMaxLength   = 1<<24 - 1
 	frameMaxStreamID = 1<<31 - 1
+	frameHeaderLen   = 9
+
+	connectionControlStreamID = 0
 )
+
+// writeFrame ...
+func writeFrame(w io.Writer, typ byte, flags byte, streamID uint32, payload []byte) error {
+	frame, err := newFrame(typ, flags, streamID, payload)
+	if err != nil {
+		return fmt.Errorf("error creating frame: %w", err)
+	}
+
+	_, err = w.Write(frame.Bytes())
+	if err != nil {
+		return fmt.Errorf("error writing frame: %w", err)
+	}
+	return nil
+}
 
 type frame struct {
 	frameType byte
@@ -127,8 +166,6 @@ func newFrame(typ byte, flags byte, streamID uint32, payload []byte) (*frame, er
 // parseFrame consumes bytes from the given reader and parse the bytes into
 // a frame struct.
 func parseFrame(r io.Reader) (*frame, error) {
-	frameHeaderLen := 9
-
 	frameHeader := make([]byte, frameHeaderLen)
 	n, err := r.Read(frameHeader)
 	if err != nil {

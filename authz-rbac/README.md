@@ -215,8 +215,45 @@ RBAC is common, but it’s only one of several major models.
 
 ---
 
-## Practical Takeaway
-Most real systems **combine models**:
-- RBAC + ABAC → common in enterprises
-- ReBAC + RBAC → modern SaaS
-- OAuth scopes + policies → APIs and microservices
+## 9. Minimal RBAC Implementation Example
+
+This directory contains a minimal Go implementation of RBAC.
+
+### How to Run
+```bash
+go run main.go
+```
+
+### How to Test
+This implementation uses JWT for identity and RBAC for authorization.
+
+**1. Login to get a JWT:**
+```bash
+# Get token for Alice (Admin)
+curl -X POST "http://localhost:8080/login?user=alice"
+# Get token for Charlie (Viewer)
+curl -X POST "http://localhost:8080/login?user=charlie"
+```
+
+**2. Access protected endpoint (Success):**
+Copy the token from step 1 and use it in the Authorization header.
+```bash
+TOKEN="your_token_here"
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/data
+```
+
+**3. Access restricted action (Forbidden):**
+If you use Charlie's token to POST, it will be forbidden.
+```bash
+TOKEN_CHARLIE="charlie_token"
+curl -X POST -H "Authorization: Bearer $TOKEN_CHARLIE" http://localhost:8080/data
+```
+
+---
+
+## Why "Permission" is needed?
+In this implementation, the JWT contains the `Role` (e.g., "viewer"). However, the code checks for a `Permission` (e.g., "read:data").
+
+1. **Decoupling:** If you decide that `viewers` should also be able to `write`, you only change the `rolePermissions` map. You don't have to touch the logic in `handleWrite`.
+2. **Evolution:** You can add a new role (e.g., "Manager") and simply assign it the existing permissions without changing any API handlers.
+3. **Auditability:** It's easier to audit "who can write data" by looking at the permission mapping than by hunting through `if role == "admin" || role == "editor"` checks.

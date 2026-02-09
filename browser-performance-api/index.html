@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Browser Performance API - Minimal Demo</title>
+        <link rel="stylesheet" href="/slow.css" />
+        <style>
+            body {
+                font-family: system-ui, sans-serif;
+                margin: 32px;
+                line-height: 1.5;
+            }
+            button {
+                padding: 8px 12px;
+            }
+            pre {
+                background: #f3f3f3;
+                padding: 12px;
+                border-radius: 6px;
+                overflow-x: auto;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>
+            Browser Performance API (Minimal)
+            <img src="/icon.svg" />
+        </h1>
+        <p>Open DevTools → Console for the logs.</p>
+
+        <button id="mark">Create Mark + Measure</button>
+        <pre id="out">Waiting...</pre>
+
+        <script>
+            const nav = performance.getEntriesByType("navigation")[0];
+            console.log("TTFB", nav.responseStart - nav.requestStart);
+
+            const out = document.getElementById("out");
+
+            // Differences between 'load' and 'DOMContentLoaded': https://www.greatfrontend.com/questions/quiz/difference-between-document-load-event-and-document-domcontentloaded-event
+            new PerformanceObserver((list) => {
+                list.getEntries().forEach((entry) => {
+                    const loadEventTime = entry.loadEventEnd - entry.startTime;
+                    if (loadEventTime > 0) {
+                        console.log(
+                            `${entry.name}: until load event end: ${loadEventTime}ms`,
+                        );
+                    }
+
+                    const domContentLoadedTime =
+                        entry.domContentLoadedEventEnd - entry.startTime;
+                    if (domContentLoadedTime > 0) {
+                        console.log(
+                            `${entry.name}: until dom content loaded end: ${domContentLoadedTime}ms`,
+                        );
+                    }
+                });
+            }).observe({ type: "navigation", buffered: true });
+
+            // Paint Timing (FCP)
+            new PerformanceObserver((list) => {
+                list.getEntries().forEach((entry) => {
+                    console.log("Paint", entry.name, entry.startTime);
+                });
+            }).observe({ type: "paint", buffered: true });
+
+            // User Timing (custom)
+            document.getElementById("mark").addEventListener("click", () => {
+                performance.mark("demo-start");
+                setTimeout(() => {
+                    performance.mark("demo-end");
+                    performance.measure("demo", "demo-start", "demo-end");
+                    const measures = performance.getEntriesByType("measure");
+                    const latest = measures[measures.length - 1];
+                    out.textContent = latest
+                        ? `Measure ${latest.name}: ${latest.duration.toFixed(1)} ms`
+                        : "No measure";
+                }, 100);
+            });
+        </script>
+    </body>
+</html>

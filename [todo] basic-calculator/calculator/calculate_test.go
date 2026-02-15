@@ -16,12 +16,14 @@ func TestCalculate(t *testing.T) {
 		{
 			arg:      "1+2",
 			expected: 3,
-			wantErr:  false,
 		},
 		{
-			arg:      "1+2+3",
-			expected: 6,
-			wantErr:  false,
+			arg:      "50-38",
+			expected: 12,
+		},
+		{
+			arg:      "3-2+1",
+			expected: 2,
 		},
 		{
 			arg:     "1+",

@@ -48,8 +48,8 @@ func (p *parser) parse() (expression, error) {
 	p.cur = 1
 
 	for p.cur < len(p.tokens) {
-		if p.tokens[p.cur].typ == tokenTypePlus {
-			expr, err = p.readPlusExpr(expr)
+		if p.tokens[p.cur].typ == tokenTypePlus || p.tokens[p.cur].typ == tokenTypeMinus {
+			expr, err = p.readBinaryExpr(expr)
 			if err != nil {
 				return nil, err
 			}
@@ -62,22 +62,63 @@ func (p *parser) parse() (expression, error) {
 	return expr, nil
 }
 
-func (p *parser) readPlusExpr(curExpr expression) (expression, error) {
+// readBinaryExpr creates a binary expression by consuming an operator token and the right operand.
+// This function must be called when the cursor is on an operator token.
+func (p *parser) readBinaryExpr(leftOperand expression) (expression, error) {
+	opToken := p.tokens[p.cur]
 	p.cur++
 
-	if p.cur >= len(p.tokens) || p.tokens[p.cur].typ != tokenTypeNumber {
-		return nil, errors.New("error number token expected")
+	if p.cur >= len(p.tokens) {
+		return nil, errors.New("error unexpected end of expression")
 	}
 
-	rightExpr, err := newNumberExpr(p.tokens[p.cur])
+	var err error
+	var rightOperand expression
+	switch p.tokens[p.cur].typ {
+	case tokenTypeMinus:
+		rightOperand, err = p.readNegativeExpr()
+	case tokenTypeNumber:
+		rightOperand, err = p.readNumber()
+	default:
+		return nil, fmt.Errorf("error unexpected token: %+v", p.tokens[p.cur])
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return newBinaryExpr(leftOperand, rightOperand, opToken)
+}
+
+func (p *parser) readNumber() (expression, error) {
+	numberExpr, err := newNumberExpr(p.tokens[p.cur])
 	if err != nil {
 		return nil, err
 	}
 	p.cur++
 
-	return &plusExpr{
-		left:  curExpr,
-		right: rightExpr,
+	return numberExpr, nil
+}
+
+// readNegativeExpr ...
+func (p *parser) readNegativeExpr() (expression, error) {
+	p.cur++
+
+	if p.cur >= len(p.tokens) {
+		return nil, errors.New("error unexpected end of expression")
+	}
+
+	if p.tokens[p.cur].typ != tokenTypeNumber {
+		return nil, fmt.Errorf("error unexpected token encounter: %+v", p.tokens[p.cur])
+	}
+
+	numberExpr, err := newNumberExpr(p.tokens[p.cur])
+	if err != nil {
+		return nil, err
+	}
+	p.cur++
+
+	return &negativeExpr{
+		operand: numberExpr,
 	}, nil
 }
 
@@ -108,13 +149,40 @@ func (ne *numberExpr) value() int {
 	return ne.val
 }
 
-type plusExpr struct {
-	left  expression
-	right expression
+type negativeExpr struct {
+	operand expression
 }
 
-func (pe *plusExpr) value() int {
-	return pe.left.value() + pe.right.value()
+func (ne *negativeExpr) value() int {
+	return -ne.operand.value()
+}
+
+type binaryExpr struct {
+	left    expression
+	right   expression
+	opToken token
+}
+
+func newBinaryExpr(left expression, right expression, opToken token) (expression, error) {
+	if opToken.typ != tokenTypePlus && opToken.typ != tokenTypeMinus {
+		return nil, fmt.Errorf("error invalid operator token: got %+v", opToken)
+	}
+
+	return &binaryExpr{
+		left:    left,
+		right:   right,
+		opToken: opToken,
+	}, nil
+}
+
+func (pe *binaryExpr) value() int {
+	if pe.opToken.typ == tokenTypePlus {
+		return pe.left.value() + pe.right.value()
+	}
+	if pe.opToken.typ == tokenTypeMinus {
+		return pe.left.value() - pe.right.value()
+	}
+	panic("unknown state reached. invalid operator token")
 }
 
 // tokenize converts the given expression string into a list of token.
@@ -173,6 +241,8 @@ func (t *tokenizer) tokenize() ([]token, error) {
 	return tokens, nil
 }
 
+// readNumber consumes all numeric digits while advancing the cursor at the same time
+// to create a number token. It must be called when the cursor is on a numeric character.
 func (t *tokenizer) readNumber() token {
 	var val []byte
 	for t.cur < len(t.s) && isNumber(t.s[t.cur]) {

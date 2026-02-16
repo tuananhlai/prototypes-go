@@ -20,6 +20,7 @@ func Calculate(s string) (int, error) {
 	return expr.value(), nil
 }
 
+// parse transforms the list of token into a evaluable expression.
 func parse(tokens []token) (expression, error) {
 	parser := newParser(tokens)
 	return parser.parse()
@@ -31,6 +32,8 @@ type parser struct {
 }
 
 func newParser(tokens []token) *parser {
+	// add a start and end parentheses so that we can reuse the for loop with
+	// `readParenExpr`.
 	tokens = append([]token{{typ: tokenTypeLParen}}, tokens...)
 	tokens = append(tokens, token{typ: tokenTypeRParen})
 	return &parser{
@@ -43,10 +46,22 @@ func (p *parser) parse() (expression, error) {
 		return nil, errors.New("error empty token list")
 	}
 
-	return p.readPrimaryExpr()
+	expr, err := p.readExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	// If there are still unconsumed tokens after the expression is parsed,
+	// the given token list must have been invalid.
+	if p.cur != len(p.tokens) {
+		return nil, fmt.Errorf("error unexpected token: %+v", p.tokens[p.cur])
+	}
+
+	return expr, nil
 }
 
-func (p *parser) readPrimaryExpr() (expression, error) {
+// readExpression creates an expression based on the current token.
+func (p *parser) readExpression() (expression, error) {
 	if p.cur >= len(p.tokens) {
 		return nil, errors.New("error unexpected end of expression")
 	}
@@ -72,6 +87,8 @@ func (p *parser) readPrimaryExpr() (expression, error) {
 	return expr, err
 }
 
+// readParenExpr creates an expression from the tokens between the current token and the next right parenthesis.
+// It must be called when the cursor is on a left parenthesis token.
 func (p *parser) readParenExpr() (expression, error) {
 	if p.cur >= len(p.tokens) || p.tokens[p.cur].typ != tokenTypeLParen {
 		return nil, errors.New("error unexpected token or eof")
@@ -85,7 +102,7 @@ func (p *parser) readParenExpr() (expression, error) {
 		curToken := p.tokens[p.cur]
 
 		if expr == nil {
-			expr, err = p.readPrimaryExpr()
+			expr, err = p.readExpression()
 		} else if curToken.typ == tokenTypePlus || curToken.typ == tokenTypeMinus {
 			expr, err = p.readBinaryExpr(expr)
 		} else if curToken.typ == tokenTypeRParen {
@@ -112,7 +129,7 @@ func (p *parser) readBinaryExpr(leftOperand expression) (expression, error) {
 	opToken := p.tokens[p.cur]
 	p.cur++
 
-	rightOperand, err := p.readPrimaryExpr()
+	rightOperand, err := p.readExpression()
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +137,8 @@ func (p *parser) readBinaryExpr(leftOperand expression) (expression, error) {
 	return newBinaryExpr(leftOperand, rightOperand, opToken)
 }
 
+// readNumber creates a number expression from the current token.
+// This function must be called when the cursor is on a number token.
 func (p *parser) readNumber() (expression, error) {
 	if p.cur >= len(p.tokens) || p.tokens[p.cur].typ != tokenTypeNumber {
 		return nil, errors.New("error unexpected end of expression")
@@ -134,14 +153,15 @@ func (p *parser) readNumber() (expression, error) {
 	return numberExpr, nil
 }
 
-// readNegativeExpr ...
+// readNegativeExpr creates an expression for the '-' unary operator.
+// It must be called when the cursor is on a minus token.
 func (p *parser) readNegativeExpr() (expression, error) {
 	if p.cur >= len(p.tokens) || p.tokens[p.cur].typ != tokenTypeMinus {
 		return nil, errors.New("error unexpected end of expression")
 	}
 	p.cur++
 
-	operand, err := p.readPrimaryExpr()
+	operand, err := p.readExpression()
 	if err != nil {
 		return nil, err
 	}
@@ -260,6 +280,22 @@ func (t *tokenizer) tokenize() ([]token, error) {
 		if t.s[t.cur] == '-' {
 			tokens = append(tokens, token{
 				typ: tokenTypeMinus,
+			})
+			t.cur++
+			continue
+		}
+
+		if t.s[t.cur] == '(' {
+			tokens = append(tokens, token{
+				typ: tokenTypeLParen,
+			})
+			t.cur++
+			continue
+		}
+
+		if t.s[t.cur] == ')' {
+			tokens = append(tokens, token{
+				typ: tokenTypeRParen,
 			})
 			t.cur++
 			continue

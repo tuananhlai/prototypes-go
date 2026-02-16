@@ -60,6 +60,17 @@ func TestTokenize(t *testing.T) {
 			},
 		},
 		{
+			name: "should parse parenthesis",
+			arg:  "(1+2)",
+			expected: []token{
+				{tokenTypeLParen, ""},
+				{tokenTypeNumber, "1"},
+				{tokenTypePlus, ""},
+				{tokenTypeNumber, "2"},
+				{tokenTypeRParen, ""},
+			},
+		},
+		{
 			name:    "should fail on empty expression string",
 			arg:     "",
 			wantErr: true,

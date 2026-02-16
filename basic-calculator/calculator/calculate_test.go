@@ -3,6 +3,7 @@ package calculator_test
 import (
 	"testing"
 
+	"github.com/Knetic/govaluate"
 	"github.com/tuananhlai/prototypes/basic-calculator/calculator"
 )
 
@@ -106,5 +107,22 @@ func TestCalculate(t *testing.T) {
 				t.Errorf("Calculate() got = %v, want %v", got, tc.expected)
 			}
 		})
+	}
+}
+
+func BenchmarkCalculate(b *testing.B) {
+	s := "(((25 - (7 + 3)) + (14 - (6 - 2))) - ((9 + (4 - 1)) - 8)) + ((30 - (12 + (5 - 3))) - ((7 - 2) + (6 - (4 + 1)))) - (18 - (9 + (2 - (3 + 1))))"
+
+	for b.Loop() {
+		_, _ = calculator.Calculate(s)
+	}
+}
+
+func BenchmarkGovaluate(b *testing.B) {
+	s := "(((25 - (7 + 3)) + (14 - (6 - 2))) - ((9 + (4 - 1)) - 8)) + ((30 - (12 + (5 - 3))) - ((7 - 2) + (6 - (4 + 1)))) - (18 - (9 + (2 - (3 + 1))))"
+
+	for b.Loop() {
+		expr, _ := govaluate.NewEvaluableExpression(s)
+		_, _ = expr.Evaluate(nil)
 	}
 }

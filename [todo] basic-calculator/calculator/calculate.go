@@ -31,6 +31,8 @@ type parser struct {
 }
 
 func newParser(tokens []token) *parser {
+	tokens = append([]token{{typ: tokenTypeLParen}}, tokens...)
+	tokens = append(tokens, token{typ: tokenTypeRParen})
 	return &parser{
 		tokens: tokens,
 	}
@@ -41,47 +43,76 @@ func (p *parser) parse() (expression, error) {
 		return nil, errors.New("error empty token list")
 	}
 
-	expr, err := newNumberExpr(p.tokens[0])
+	return p.readPrimaryExpr()
+}
+
+func (p *parser) readPrimaryExpr() (expression, error) {
+	if p.cur >= len(p.tokens) {
+		return nil, errors.New("error unexpected end of expression")
+	}
+	var expr expression
+	var err error
+
+	curToken := p.tokens[p.cur]
+	switch curToken.typ {
+	case tokenTypeNumber:
+		expr, err = p.readNumber()
+	case tokenTypeLParen:
+		expr, err = p.readParenExpr()
+	case tokenTypeMinus:
+		expr, err = p.readNegativeExpr()
+	default:
+		return nil, fmt.Errorf("error unexpected token: %+v", curToken)
+	}
+
 	if err != nil {
 		return nil, err
 	}
-	p.cur = 1
+
+	return expr, err
+}
+
+func (p *parser) readParenExpr() (expression, error) {
+	if p.cur >= len(p.tokens) || p.tokens[p.cur].typ != tokenTypeLParen {
+		return nil, errors.New("error unexpected token or eof")
+	}
+	p.cur++
+
+	var expr expression
+	var err error
 
 	for p.cur < len(p.tokens) {
-		if p.tokens[p.cur].typ == tokenTypePlus || p.tokens[p.cur].typ == tokenTypeMinus {
+		curToken := p.tokens[p.cur]
+
+		if expr == nil {
+			expr, err = p.readPrimaryExpr()
+		} else if curToken.typ == tokenTypePlus || curToken.typ == tokenTypeMinus {
 			expr, err = p.readBinaryExpr(expr)
-			if err != nil {
-				return nil, err
-			}
-			continue
+		} else if curToken.typ == tokenTypeRParen {
+			p.cur++
+			return expr, nil
+		} else {
+			return nil, fmt.Errorf("error unexpected token: %+v", curToken)
 		}
 
-		return nil, fmt.Errorf("error unexpected token: %+v", p.tokens[p.cur])
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return expr, nil
+	return nil, errors.New("error unexpected end of expression")
 }
 
 // readBinaryExpr creates a binary expression by consuming an operator token and the right operand.
 // This function must be called when the cursor is on an operator token.
 func (p *parser) readBinaryExpr(leftOperand expression) (expression, error) {
+	if p.cur >= len(p.tokens) || (p.tokens[p.cur].typ != tokenTypeMinus && p.tokens[p.cur].typ != tokenTypePlus) {
+		return nil, errors.New("error unexpected end of expression")
+	}
 	opToken := p.tokens[p.cur]
 	p.cur++
 
-	if p.cur >= len(p.tokens) {
-		return nil, errors.New("error unexpected end of expression")
-	}
-
-	var err error
-	var rightOperand expression
-	switch p.tokens[p.cur].typ {
-	case tokenTypeMinus:
-		rightOperand, err = p.readNegativeExpr()
-	case tokenTypeNumber:
-		rightOperand, err = p.readNumber()
-	default:
-		return nil, fmt.Errorf("error unexpected token: %+v", p.tokens[p.cur])
-	}
+	rightOperand, err := p.readPrimaryExpr()
 	if err != nil {
 		return nil, err
 	}
@@ -90,6 +121,10 @@ func (p *parser) readBinaryExpr(leftOperand expression) (expression, error) {
 }
 
 func (p *parser) readNumber() (expression, error) {
+	if p.cur >= len(p.tokens) || p.tokens[p.cur].typ != tokenTypeNumber {
+		return nil, errors.New("error unexpected end of expression")
+	}
+
 	numberExpr, err := newNumberExpr(p.tokens[p.cur])
 	if err != nil {
 		return nil, err
@@ -101,24 +136,18 @@ func (p *parser) readNumber() (expression, error) {
 
 // readNegativeExpr ...
 func (p *parser) readNegativeExpr() (expression, error) {
-	p.cur++
-
-	if p.cur >= len(p.tokens) {
+	if p.cur >= len(p.tokens) || p.tokens[p.cur].typ != tokenTypeMinus {
 		return nil, errors.New("error unexpected end of expression")
 	}
+	p.cur++
 
-	if p.tokens[p.cur].typ != tokenTypeNumber {
-		return nil, fmt.Errorf("error unexpected token encounter: %+v", p.tokens[p.cur])
-	}
-
-	numberExpr, err := newNumberExpr(p.tokens[p.cur])
+	operand, err := p.readPrimaryExpr()
 	if err != nil {
 		return nil, err
 	}
-	p.cur++
 
 	return &negativeExpr{
-		operand: numberExpr,
+		operand: operand,
 	}, nil
 }
 
@@ -271,4 +300,6 @@ const (
 	tokenTypeNumber tokenType = iota
 	tokenTypePlus
 	tokenTypeMinus
+	tokenTypeLParen
+	tokenTypeRParen
 )

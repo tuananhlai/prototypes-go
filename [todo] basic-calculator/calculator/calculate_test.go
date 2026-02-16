@@ -14,6 +14,14 @@ func TestCalculate(t *testing.T) {
 		wantErr  bool
 	}{
 		{
+			arg:      "10",
+			expected: 10,
+		},
+		{
+			arg:      "-25",
+			expected: -25,
+		},
+		{
 			arg:      "1+2",
 			expected: 3,
 		},
@@ -26,11 +34,47 @@ func TestCalculate(t *testing.T) {
 			expected: 2,
 		},
 		{
+			arg:      "(1+2)",
+			expected: 3,
+		},
+		{
+			arg:      "-(2+3)",
+			expected: -5,
+		},
+		{
+			arg:      "3-(2+1)",
+			expected: 0,
+		},
+		{
+			arg:      "1 +   2 - (3 +      4)",
+			expected: -4,
+		},
+		{
+			arg:      "((((9))))",
+			expected: 9,
+		},
+		{
+			arg:     "",
+			wantErr: true,
+		},
+		{
 			arg:     "1+",
 			wantErr: true,
 		},
 		{
 			arg:     "+2",
+			wantErr: true,
+		},
+		{
+			arg:     "1 2",
+			wantErr: true,
+		},
+		{
+			arg:     "(1 + 2))",
+			wantErr: true,
+		},
+		{
+			arg:     "((1 + 2)",
 			wantErr: true,
 		},
 	}

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Minimal WebRTC Demo</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 24px;
+        max-width: 720px;
+      }
+      .row {
+        margin: 12px 0;
+      }
+      .log {
+        border: 1px solid #ddd;
+        padding: 8px;
+        height: 180px;
+        overflow: auto;
+        white-space: pre-wrap;
+      }
+      input,
+      button,
+      select {
+        padding: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Minimal WebRTC (DataChannel)</h1>
+    <p>Open this page in two tabs. Use the same room and different peers (A/B).</p>
+
+    <div class="row">
+      <label>Room <input id="room" value="demo" /></label>
+      <label
+        >Peer
+        <select id="peer">
+          <option value="A">A</option>
+          <option value="B">B</option>
+        </select>
+      </label>
+      <button id="start">Start</button>
+    </div>
+
+    <div class="row">
+      <input id="msg" placeholder="Message" />
+      <button id="send">Send</button>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <script>
+      const roomInput = document.getElementById('room');
+      const peerInput = document.getElementById('peer');
+      const startBtn = document.getElementById('start');
+      const sendBtn = document.getElementById('send');
+      const msgInput = document.getElementById('msg');
+      const logEl = document.getElementById('log');
+
+      const params = new URLSearchParams(location.search);
+      if (params.get('room')) roomInput.value = params.get('room');
+      if (params.get('peer')) peerInput.value = params.get('peer');
+
+      let pc;
+      let dc;
+      let lastID = 0;
+      let polling;
+
+      const rtcConfig = {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      };
+
+      const log = (line) => {
+        logEl.textContent += line + '\n';
+        logEl.scrollTop = logEl.scrollHeight;
+      };
+
+      const selfPeer = () => peerInput.value;
+      const otherPeer = () => (selfPeer() === 'A' ? 'B' : 'A');
+      const room = () => roomInput.value.trim();
+
+      async function sendSignal(type, payload) {
+        await fetch('/signal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room: room(),
+            from: selfPeer(),
+            to: otherPeer(),
+            type,
+            payload: JSON.stringify(payload),
+          }),
+        });
+      }
+
+      async function pollSignals() {
+        const url = `/signal?room=${encodeURIComponent(room())}&to=${encodeURIComponent(selfPeer())}&after=${lastID}`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const messages = await res.json();
+        for (const m of messages) {
+          lastID = Math.max(lastID, m.id);
+          await onSignal(m.type, JSON.parse(m.payload));
+        }
+      }
+
+      async function onSignal(type, payload) {
+        if (!pc) return;
+        if (type === 'offer') {
+          await pc.setRemoteDescription(payload);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await sendSignal('answer', answer);
+          log('sent answer');
+        } else if (type === 'answer') {
+          await pc.setRemoteDescription(payload);
+          log('applied answer');
+        } else if (type === 'candidate') {
+          try {
+            await pc.addIceCandidate(payload);
+          } catch (err) {
+            log('candidate error: ' + err.message);
+          }
+        }
+      }
+
+      function bindDataChannel(channel) {
+        dc = channel;
+        dc.onopen = () => log('data channel open');
+        dc.onmessage = (evt) => log(`remote: ${evt.data}`);
+        dc.onclose = () => log('data channel closed');
+      }
+
+      async function start() {
+        if (!room()) {
+          alert('room is required');
+          return;
+        }
+        if (polling) clearInterval(polling);
+
+        pc = new RTCPeerConnection(rtcConfig);
+        pc.onicecandidate = (evt) => {
+          if (evt.candidate) sendSignal('candidate', evt.candidate);
+        };
+        pc.onconnectionstatechange = () => log('connection: ' + pc.connectionState);
+        pc.ondatachannel = (evt) => bindDataChannel(evt.channel);
+
+        if (selfPeer() === 'A') {
+          bindDataChannel(pc.createDataChannel('chat'));
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          await sendSignal('offer', offer);
+          log('sent offer');
+        } else {
+          log('waiting for offer');
+        }
+
+        polling = setInterval(() => {
+          pollSignals().catch((err) => log('poll error: ' + err.message));
+        }, 700);
+
+        log(`started as ${selfPeer()} in room ${room()}`);
+      }
+
+      startBtn.addEventListener('click', () => {
+        start().catch((err) => log('start error: ' + err.message));
+      });
+
+      sendBtn.addEventListener('click', () => {
+        if (!dc || dc.readyState !== 'open') {
+          log('data channel is not open yet');
+          return;
+        }
+        const msg = msgInput.value;
+        if (!msg) return;
+        dc.send(msg);
+        log(`local: ${msg}`);
+        msgInput.value = '';
+      });
+    </script>
+  </body>
+</html>

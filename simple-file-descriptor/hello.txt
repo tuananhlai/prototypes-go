@@ -1,0 +1,3 @@
+When running Claude Code in WSL2, the debug log shows 6+ repeated calls to powershell.exe -Command '$env:USERPROFILE', each taking approximately 10 seconds due to WSL2's slow Windows interop. This adds ~60 seconds of unnecessary startup delay.
+
+最近Claude Codeが頻繁に数秒間のフリーズを繰り返す現象が発生したため調査したところ、WSL内で起動したClaude Codeは頻繁にホストマシン（Windows側）のユーザープロファイルディレクトリを取得する仕様があることがわかりました。

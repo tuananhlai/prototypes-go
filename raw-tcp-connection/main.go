@@ -33,9 +33,13 @@ func main() {
 		Addr: [4]byte(ipAddr.IP),
 		Port: port,
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	body := []byte("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
-	_, err = unix.Write(fd, body)
+	// Same as unix.Write(fd, body) because no flags is passed.
+	err = unix.Send(fd, body, 0)
 	if err != nil {
 		log.Fatal(err)
 	}

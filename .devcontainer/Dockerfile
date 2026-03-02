@@ -17,4 +17,4 @@ RUN echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv zsh)"' >> /home/v
 
 # Enable access to `brew` command and install packages.
 RUN eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" &&\
-    brew install httpie pgcli gh
+    brew install httpie pgcli gh codex gemini-cli go-task

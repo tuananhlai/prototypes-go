@@ -11,5 +11,5 @@ BenchmarkHexEncoding/hex.EncodeToString-10         	 3580761	       335.2 ns/op
 BenchmarkHexEncoding/manual_(bytes.Buffer)-10      	 2894888	       403.6 ns/op
 BenchmarkSHA256-10                                 	  283051	      4250 ns/op	2409.24 MB/s
 BenchmarkSort-10                                   	40324387	        29.06 ns/op	         0.3442 compares/ns	        10.00 compares/op
-PASS
-ok  	github.com/tuananhlai/prototypes/cheatsheet-benchmark	11.857s
+BenchmarkWriteConcatBytes-10    	   82082	     13186 ns/op
+BenchmarkWriteWritev-10         	  102897	     12193 ns/op

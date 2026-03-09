@@ -13,7 +13,7 @@ func main() {
 }
 
 func demoSeekPastEnd() {
-	fd, err := unix.Open("/tmp/demoSeekPastEnd.txt", unix.O_CREAT|unix.O_RDWR, 0644)
+	fd, err := unix.Open("/tmp/demoSeekPastEnd.txt", unix.O_CREAT|unix.O_RDWR, 0o644)
 	if err != nil {
 		panic(err)
 	}
@@ -54,7 +54,7 @@ func demoSeekPastEnd() {
 
 func demoWrite() {
 	// unix.O_WRONLY|unix.O_RDONLY isn't the same as unix.O_RDWR
-	fd, err := unix.Open("/tmp/demoWrite.txt", unix.O_CREAT|unix.O_RDWR, 0644)
+	fd, err := unix.Open("/tmp/demoWrite.txt", unix.O_CREAT|unix.O_RDWR, 0o644)
 	if err != nil {
 		panic(err)
 	}

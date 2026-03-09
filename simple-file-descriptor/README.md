@@ -113,8 +113,8 @@ int main() {
     // 1. Open a file descriptor
     // O_WRONLY: Write-only mode
     // O_CREAT: Create file if it doesn't already exist
-    // 0644: Unix permissions (Read/write for owner, read for group/others)
-    int fd = open("output.txt", O_WRONLY | O_CREAT, 0644);
+    // 0o644: Unix permissions (Read/write for owner, read for group/others)
+    int fd = open("output.txt", O_WRONLY | O_CREAT, 0o644);
 
     if (fd == -1) {
         perror("Failed to open file descriptor");

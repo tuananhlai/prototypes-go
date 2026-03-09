@@ -40,7 +40,7 @@ type AtomicID struct {
 }
 
 func NewAtomicID() (*AtomicID, error) {
-	file, err := os.OpenFile("atomic_id", os.O_RDWR|os.O_CREATE, 0644)
+	file, err := os.OpenFile("atomic_id", os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return nil, err
 	}

@@ -45,7 +45,15 @@ func main() {
 }
 
 type Packet struct {
-	Header Header
+	// Header
+	ID      uint16
+	Flags   uint16
+	QDCOUNT uint16
+	ANCOUNT uint16
+	NSCOUNT uint16
+	ARCOUNT uint16
+
+	// Question
 	QNAME  []byte
 	QTYPE  uint16
 	QCLASS uint16
@@ -58,15 +66,15 @@ func NewARecordQuery(hostname string) (Packet, error) {
 	}
 
 	return Packet{
-		Header: Header{
-			ID:    1,
-			Flags: 0x0100,
-			// Without QDCOUNT, DNS server will not send a response.
-			// TODO: find out why.
-			QDCOUNT: 1,
-		},
-		QNAME:  qName,
-		QTYPE:  1,
+		ID:    1,
+		Flags: 0x0100,
+		// Without QDCOUNT, DNS server will not send a response.
+		// TODO: find out why.
+		QDCOUNT: 1,
+		QNAME:   qName,
+		// A Record
+		QTYPE: 1,
+		// TODO: understand the meaning of QCLASS.
 		QCLASS: 1,
 	}, nil
 }
@@ -75,12 +83,12 @@ func (p Packet) Bytes() []byte {
 	qTypeStart := 12 + len(p.QNAME)
 
 	packet := make([]byte, 12+len(p.QNAME)+4)
-	binary.BigEndian.PutUint16(packet, p.Header.ID)
-	binary.BigEndian.PutUint16(packet[2:], p.Header.Flags)
-	binary.BigEndian.PutUint16(packet[4:], p.Header.QDCOUNT)
-	binary.BigEndian.PutUint16(packet[6:], p.Header.ANCOUNT)
-	binary.BigEndian.PutUint16(packet[8:], p.Header.NSCOUNT)
-	binary.BigEndian.PutUint16(packet[10:], p.Header.ARCOUNT)
+	binary.BigEndian.PutUint16(packet, p.ID)
+	binary.BigEndian.PutUint16(packet[2:], p.Flags)
+	binary.BigEndian.PutUint16(packet[4:], p.QDCOUNT)
+	binary.BigEndian.PutUint16(packet[6:], p.ANCOUNT)
+	binary.BigEndian.PutUint16(packet[8:], p.NSCOUNT)
+	binary.BigEndian.PutUint16(packet[10:], p.ARCOUNT)
 
 	copy(packet[12:], p.QNAME)
 
@@ -90,30 +98,7 @@ func (p Packet) Bytes() []byte {
 	return packet
 }
 
-type Header struct {
-	ID      uint16
-	Flags   uint16
-	QDCOUNT uint16
-	ANCOUNT uint16
-	NSCOUNT uint16
-	ARCOUNT uint16
-}
-
-type Question struct {
-	QNAME  []byte
-	QTYPE  uint16
-	QCLASS uint16
-}
-
-func (q Question) Bytes() []byte {
-	return append(q.QNAME,
-		byte(q.QTYPE>>8),
-		byte(q.QTYPE),
-		byte(q.QCLASS>>8),
-		byte(q.QCLASS),
-	)
-}
-
+// encodeHostname encodes the given hostname into length-prefixed labels.
 func encodeHostname(hostname string) ([]byte, error) {
 	parts := strings.Split(hostname, ".")
 

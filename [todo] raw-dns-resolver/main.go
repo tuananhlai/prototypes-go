@@ -49,39 +49,57 @@ const (
 	maxUint16 = 1<<16 - 1
 )
 
-type Question struct {
-	QNAME  []byte
-	QTYPE  uint16
-	QCLASS uint16
+type rr struct {
+	name  []byte
+	typ   uint16
+	clazz uint16
+	ttl   uint32
+	rData []byte
 }
 
-func (q *Question) Len() int {
-	return len(q.QNAME) + 4
+type question struct {
+	name  []byte
+	typ   uint16
+	clazz uint16
 }
 
-type Packet struct {
-	// Header
-	ID        uint16
-	Flags     uint16
-	Questions []Question
+func (q *question) Len() int {
+	return len(q.name) + 4
 }
 
-func (p *Packet) Valid() error {
-	if len(p.Questions) > maxUint16 {
+type packet struct {
+	id         uint16
+	flags      uint16
+	questions  []question
+	answers    []rr
+	authority  []rr
+	additional []rr
+}
+
+func (p *packet) valid() error {
+	if len(p.questions) > maxUint16 {
 		return errors.New("error questions exceeded maximum length")
 	}
-
+	if len(p.answers) > maxUint16 {
+		return errors.New("error answers exceeded maximum length")
+	}
+	if len(p.authority) > maxUint16 {
+		return errors.New("error authority exceeded maximum length")
+	}
+	if len(p.additional) > maxUint16 {
+		return errors.New("error additional exceeded maximum length")
+	}
 	return nil
 }
 
-func newPacket(id uint16, flags uint16, questions []Question) (*Packet, error) {
-	p := &Packet{
-		ID:        id,
-		Flags:     flags,
-		Questions: questions,
+func newPacket(id uint16, flags uint16, questions []question) (*packet, error) {
+	p := &packet{
+		id:        id,
+		flags:     flags,
+		questions: questions,
 	}
 
-	err := p.Valid()
+	err := p.valid()
 	if err != nil {
 		return nil, err
 	}
@@ -89,17 +107,17 @@ func newPacket(id uint16, flags uint16, questions []Question) (*Packet, error) {
 	return p, nil
 }
 
-func newARecordQuery(hostname string) (*Packet, error) {
+func newARecordQuery(hostname string) (*packet, error) {
 	qName, err := encodeHostname(hostname)
 	if err != nil {
 		return nil, err
 	}
 
-	packet, err := newPacket(1, 0x0100, []Question{
+	packet, err := newPacket(1, 0x0100, []question{
 		{
-			QNAME:  qName,
-			QTYPE:  1,
-			QCLASS: 1,
+			name:  qName,
+			typ:   1,
+			clazz: 1,
 		},
 	})
 	if err != nil {
@@ -109,28 +127,55 @@ func newARecordQuery(hostname string) (*Packet, error) {
 	return packet, nil
 }
 
-func (p *Packet) Bytes() []byte {
-	qdCount := len(p.Questions)
+func (p *packet) Bytes() []byte {
+	qdCount := len(p.questions)
+	anCount := len(p.answers)
+	nsCount := len(p.authority)
+	arCount := len(p.additional)
 
 	buf := new(bytes.Buffer)
 	buf.Write([]byte{
-		byte(p.ID >> 8),
-		byte(p.ID),
-		byte(p.Flags >> 8),
-		byte(p.Flags),
+		byte(p.id >> 8),
+		byte(p.id),
+		byte(p.flags >> 8),
+		byte(p.flags),
 		byte(qdCount >> 8),
 		byte(qdCount),
-		0, 0, 0, 0, 0, 0,
+		byte(anCount >> 8),
+		byte(anCount),
+		byte(nsCount >> 8),
+		byte(nsCount),
+		byte(arCount >> 8),
+		byte(arCount),
 	})
 
-	for _, q := range p.Questions {
-		buf.Write(q.QNAME)
+	for _, q := range p.questions {
+		buf.Write(q.name)
 		buf.Write([]byte{
-			byte(q.QTYPE >> 8),
-			byte(q.QTYPE),
-			byte(q.QCLASS >> 8),
-			byte(q.QCLASS),
+			byte(q.typ >> 8),
+			byte(q.typ),
+			byte(q.clazz >> 8),
+			byte(q.clazz),
 		})
+	}
+
+	for _, rrs := range [][]rr{p.answers, p.authority, p.additional} {
+		for _, rr := range rrs {
+			buf.Write(rr.name)
+			buf.Write([]byte{
+				byte(rr.typ >> 8),
+				byte(rr.typ),
+				byte(rr.clazz >> 8),
+				byte(rr.clazz),
+				byte(rr.ttl >> 24),
+				byte(rr.ttl >> 16),
+				byte(rr.ttl >> 8),
+				byte(rr.ttl),
+				byte(len(rr.rData) >> 8),
+				byte(len(rr.rData)),
+			})
+			buf.Write(rr.rData)
+		}
 	}
 
 	return buf.Bytes()

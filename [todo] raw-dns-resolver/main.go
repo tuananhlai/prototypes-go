@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/binary"
+	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -21,7 +22,7 @@ func main() {
 		panic(err)
 	}
 
-	query, err := NewARecordQuery("example.com")
+	query, err := newARecordQuery("example.com")
 	if err != nil {
 		panic(err)
 	}
@@ -44,58 +45,95 @@ func main() {
 	fmt.Println(buf[:n])
 }
 
-type Packet struct {
-	// Header
-	ID      uint16
-	Flags   uint16
-	QDCOUNT uint16
-	ANCOUNT uint16
-	NSCOUNT uint16
-	ARCOUNT uint16
+const (
+	maxUint16 = 1<<16 - 1
+)
 
-	// Question
+type Question struct {
 	QNAME  []byte
 	QTYPE  uint16
 	QCLASS uint16
 }
 
-func NewARecordQuery(hostname string) (Packet, error) {
-	qName, err := encodeHostname(hostname)
-	if err != nil {
-		return Packet{}, nil
-	}
-
-	return Packet{
-		ID:    1,
-		Flags: 0x0100,
-		// Without QDCOUNT, DNS server will not send a response.
-		// TODO: find out why.
-		QDCOUNT: 1,
-		QNAME:   qName,
-		// A Record
-		QTYPE: 1,
-		// TODO: understand the meaning of QCLASS.
-		QCLASS: 1,
-	}, nil
+func (q *Question) Len() int {
+	return len(q.QNAME) + 4
 }
 
-func (p Packet) Bytes() []byte {
-	qTypeStart := 12 + len(p.QNAME)
+type Packet struct {
+	// Header
+	ID        uint16
+	Flags     uint16
+	Questions []Question
+}
 
-	packet := make([]byte, 12+len(p.QNAME)+4)
-	binary.BigEndian.PutUint16(packet, p.ID)
-	binary.BigEndian.PutUint16(packet[2:], p.Flags)
-	binary.BigEndian.PutUint16(packet[4:], p.QDCOUNT)
-	binary.BigEndian.PutUint16(packet[6:], p.ANCOUNT)
-	binary.BigEndian.PutUint16(packet[8:], p.NSCOUNT)
-	binary.BigEndian.PutUint16(packet[10:], p.ARCOUNT)
+func (p *Packet) Valid() error {
+	if len(p.Questions) > maxUint16 {
+		return errors.New("error questions exceeded maximum length")
+	}
 
-	copy(packet[12:], p.QNAME)
+	return nil
+}
 
-	binary.BigEndian.PutUint16(packet[qTypeStart:], p.QTYPE)
-	binary.BigEndian.PutUint16(packet[qTypeStart+2:], p.QCLASS)
+func newPacket(id uint16, flags uint16, questions []Question) (*Packet, error) {
+	p := &Packet{
+		ID:        id,
+		Flags:     flags,
+		Questions: questions,
+	}
 
-	return packet
+	err := p.Valid()
+	if err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
+
+func newARecordQuery(hostname string) (*Packet, error) {
+	qName, err := encodeHostname(hostname)
+	if err != nil {
+		return nil, err
+	}
+
+	packet, err := newPacket(1, 0x0100, []Question{
+		{
+			QNAME:  qName,
+			QTYPE:  1,
+			QCLASS: 1,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return packet, nil
+}
+
+func (p *Packet) Bytes() []byte {
+	qdCount := len(p.Questions)
+
+	buf := new(bytes.Buffer)
+	buf.Write([]byte{
+		byte(p.ID >> 8),
+		byte(p.ID),
+		byte(p.Flags >> 8),
+		byte(p.Flags),
+		byte(qdCount >> 8),
+		byte(qdCount),
+		0, 0, 0, 0, 0, 0,
+	})
+
+	for _, q := range p.Questions {
+		buf.Write(q.QNAME)
+		buf.Write([]byte{
+			byte(q.QTYPE >> 8),
+			byte(q.QTYPE),
+			byte(q.QCLASS >> 8),
+			byte(q.QCLASS),
+		})
+	}
+
+	return buf.Bytes()
 }
 
 // encodeHostname encodes the given hostname into length-prefixed labels.

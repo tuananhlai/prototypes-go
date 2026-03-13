@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -74,6 +76,47 @@ type packet struct {
 	answers    []rr
 	authority  []rr
 	additional []rr
+}
+
+func parsePacket(r io.Reader) (*packet, error) {
+	id, err := readUint16(r)
+	if err != nil {
+		return nil, err
+	}
+	flags, err := readUint16(r)
+	if err != nil {
+		return nil, err
+	}
+	qdCount, err := readUint16(r)
+	if err != nil {
+		return nil, err
+	}
+	anCount, err := readUint16(r)
+	if err != nil {
+		return nil, err
+	}
+	nsCount, err := readUint16(r)
+	if err != nil {
+		return nil, err
+	}
+	arCount, err := readUint16(r)
+	if err != nil {
+		return nil, err
+	}
+
+}
+
+func readUint16(r io.Reader) (uint16, error) {
+	var v uint16
+	err := binary.Read(r, binary.BigEndian, &v)
+	return v, err
+}
+
+func parseQuestion(r io.Reader) (question, error) {
+
+}
+
+func readLengthPrefixedLabels(r io.Reader) ([]byte, error) {
 }
 
 func (p *packet) valid() error {

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        #root {
+            display: flex;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+</body>
+
+<script>
+    const root = document.querySelector("#root");
+
+    const focusableElems = []
+    const focusableCount = 9
+    for (let i = 0; i < focusableCount; i++) {
+        const elem = document.createElement('button');
+        elem.textContent = i;
+        // elem.addEventListener('keyup', (e) => {
+        //     if (e.key === 'ArrowRight') {
+        //         focusableElems[(i + 1) % focusableCount].focus();
+        //     } else if (e.key === 'ArrowLeft') {
+        //         focusableElems[(i - 1 + focusableCount) % focusableCount].focus();
+        //     }
+        // });
+        focusableElems.push(elem)
+    }
+
+    root.addEventListener('keyup', (e) => {
+        const i = focusableElems.indexOf(document.activeElement);
+        if (e.key === 'ArrowRight') {
+            focusableElems[(i + 1) % focusableCount].focus();
+        } else if (e.key === 'ArrowLeft') {
+            focusableElems[(i - 1 + focusableCount) % focusableCount].focus();
+        }
+    })
+
+    for (const elem of focusableElems) {
+        root.appendChild(elem)
+    }
+</script>
+
+</html>

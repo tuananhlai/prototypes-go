@@ -24,6 +24,7 @@
     for (let i = 0; i < focusableCount; i++) {
         const elem = document.createElement('button');
         elem.textContent = i;
+        elem.tabIndex = -1
         // elem.addEventListener('keyup', (e) => {
         //     if (e.key === 'ArrowRight') {
         //         focusableElems[(i + 1) % focusableCount].focus();
@@ -34,12 +35,24 @@
         focusableElems.push(elem)
     }
 
+    let focusedElemIdx = 0
+    focusableElems[focusedElemIdx].tabIndex = 0
+
     root.addEventListener('keyup', (e) => {
-        const i = focusableElems.indexOf(document.activeElement);
+        const curElem = focusableElems[focusedElemIdx]
+        const nextElem = focusableElems[(focusedElemIdx + 1) % focusableCount]
+        const prevElem = focusableElems[(focusedElemIdx - 1 + focusableCount) % focusableCount]
+
         if (e.key === 'ArrowRight') {
-            focusableElems[(i + 1) % focusableCount].focus();
+            curElem.tabIndex = -1
+            nextElem.tabIndex = 0
+            nextElem.focus();
+            focusedElemIdx++
         } else if (e.key === 'ArrowLeft') {
-            focusableElems[(i - 1 + focusableCount) % focusableCount].focus();
+            curElem.tabIndex = -1
+            prevElem.tabIndex = 0
+            prevElem.focus();
+            focusedElemIdx--
         }
     })
 

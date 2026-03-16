@@ -15,4 +15,6 @@ RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.co
     echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv zsh)"' >> /home/vscode/.zshrc && \
     # Enable access to `brew` command and install packages.
     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" && \
-    brew install httpie pgcli gh codex gemini-cli go-task
+    brew install httpie pgcli gh go-task && \
+    # Remove all cache files to reduce image size.
+    brew cleanup --prune=all

@@ -6,16 +6,20 @@ import (
 	"io"
 	"net"
 	"os"
+	"time"
+)
+
+const (
+	timeout = 5 * time.Second
 )
 
 func main() {
 	if len(os.Args) < 3 {
 		panic("not enough arguments")
 	}
-
 	host, port := os.Args[1], os.Args[2]
 
-	conn, err := net.Dial("tcp4", fmt.Sprintf("%s:%s", host, port))
+	conn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:%s", host, port), timeout)
 	if err != nil {
 		panic(err)
 	}

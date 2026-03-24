@@ -2,10 +2,8 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -47,11 +45,209 @@ func main() {
 
 	fmt.Println(buf[:n])
 
-	packet, err := parsePacket(bytes.NewReader(buf[:n]))
+	packet, err := newPacketParser(buf[:n]).parse()
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(packet)
+}
+
+type packetParser struct {
+	rawPacket []byte
+	cur       int
+}
+
+func newPacketParser(b []byte) *packetParser {
+	return &packetParser{
+		rawPacket: b,
+	}
+}
+
+func (p *packetParser) parse() (packet, error) {
+	id, err := p.readUint16()
+	if err != nil {
+		return packet{}, err
+	}
+	flags, err := p.readUint16()
+	if err != nil {
+		return packet{}, err
+	}
+	qdCount, err := p.readUint16()
+	if err != nil {
+		return packet{}, err
+	}
+	anCount, err := p.readUint16()
+	if err != nil {
+		return packet{}, err
+	}
+	nsCount, err := p.readUint16()
+	if err != nil {
+		return packet{}, err
+	}
+	arCount, err := p.readUint16()
+	if err != nil {
+		return packet{}, err
+	}
+
+	questions := make([]question, 0, qdCount)
+	for range qdCount {
+		question, err := p.parseQuestion()
+		if err != nil {
+			return packet{}, err
+		}
+
+		questions = append(questions, question)
+	}
+
+	answers := make([]rr, 0, anCount)
+	for range anCount {
+		answer, err := p.parseRR()
+		if err != nil {
+			return packet{}, err
+		}
+
+		answers = append(answers, answer)
+	}
+
+	authority := make([]rr, 0, nsCount)
+	for range nsCount {
+		record, err := p.parseRR()
+		if err != nil {
+			return packet{}, err
+		}
+
+		authority = append(authority, record)
+	}
+
+	additional := make([]rr, 0, arCount)
+	for range arCount {
+		record, err := p.parseRR()
+		if err != nil {
+			return packet{}, err
+		}
+
+		additional = append(additional, record)
+	}
+
+	return packet{
+		id:         id,
+		flags:      flags,
+		questions:  questions,
+		answers:    answers,
+		authority:  authority,
+		additional: additional,
+	}, nil
+}
+
+func (p *packetParser) parseQuestion() (question, error) {
+	name, err := p.readLengthPrefixedLabels()
+	if err != nil {
+		return question{}, err
+	}
+
+	// TODO: validate
+	typ, err := p.readUint16()
+	if err != nil {
+		return question{}, err
+	}
+
+	// TODO: validate
+	clazz, err := p.readUint16()
+	if err != nil {
+		return question{}, err
+	}
+
+	return question{
+		name:  name,
+		typ:   typ,
+		clazz: clazz,
+	}, nil
+}
+
+func (p *packetParser) parseRR() (rr, error) {
+	// FIXME: instead of length-prefixed labels, the name could be a pointer offset.
+	name, err := p.readLengthPrefixedLabels()
+	if err != nil {
+		return rr{}, fmt.Errorf("error reading name: %v", err)
+	}
+	typ, err := p.readUint16()
+	if err != nil {
+		return rr{}, fmt.Errorf("error reading type: %v", err)
+	}
+	clazz, err := p.readUint16()
+	if err != nil {
+		return rr{}, fmt.Errorf("error reading class: %v", err)
+	}
+	ttl, err := p.readUint32()
+	if err != nil {
+		return rr{}, fmt.Errorf("error reading ttl: %v", err)
+	}
+	rdLength, err := p.readUint16()
+	if err != nil {
+		return rr{}, fmt.Errorf("error reading record length: %v", err)
+	}
+	rData, err := p.readBytes(int(rdLength))
+	if err != nil {
+		return rr{}, fmt.Errorf("error reading record: %v", err)
+	}
+
+	return rr{
+		name:  name,
+		typ:   typ,
+		clazz: clazz,
+		ttl:   ttl,
+		rData: rData,
+	}, nil
+}
+
+func (p *packetParser) readUint32() (uint32, error) {
+	b, err := p.readBytes(4)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3]), nil
+}
+
+func (p *packetParser) readUint16() (uint16, error) {
+	b, err := p.readBytes(2)
+	if err != nil {
+		return 0, err
+	}
+	return uint16(b[0])<<8 | uint16(b[1]), nil
+}
+
+func (p *packetParser) readLengthPrefixedLabels() ([]byte, error) {
+	buf := new(bytes.Buffer)
+
+	for {
+		lenByte, err := p.readBytes(1)
+		if err != nil {
+			return nil, fmt.Errorf("error reading len: %v", err)
+		}
+		_, _ = buf.Write(lenByte)
+
+		if lenByte[0] == 0 {
+			break
+		}
+
+		labelBytes, err := p.readBytes(int(lenByte[0]))
+		if err != nil {
+			return nil, fmt.Errorf("error reading label: %v", err)
+		}
+		_, _ = buf.Write(labelBytes)
+	}
+
+	return buf.Bytes(), nil
+}
+
+func (p *packetParser) readBytes(n int) ([]byte, error) {
+	if p.cur+n > len(p.rawPacket) {
+		return nil, fmt.Errorf("unexpected EOF: need %d bytes at offset %d", n, p.cur)
+	}
+
+	b := p.rawPacket[p.cur : p.cur+n]
+	p.cur += n
+	return b, nil
 }
 
 const (
@@ -66,72 +262,10 @@ type rr struct {
 	rData []byte
 }
 
-func parseRR(r io.Reader) (rr, error) {
-	// FIXME: instead of length-prefixed labels, the name could be a pointer offset.
-	name, err := readLengthPrefixedLabels(r)
-	if err != nil {
-		return rr{}, fmt.Errorf("error reading name: %v", err)
-	}
-	typ, err := readUint16(r)
-	if err != nil {
-		return rr{}, fmt.Errorf("error reading type: %v", err)
-	}
-	clazz, err := readUint16(r)
-	if err != nil {
-		return rr{}, fmt.Errorf("error reading class: %v", err)
-	}
-	ttl, err := readUint32(r)
-	if err != nil {
-		return rr{}, fmt.Errorf("error reading ttl: %v", err)
-	}
-	rdLength, err := readUint16(r)
-	if err != nil {
-		return rr{}, fmt.Errorf("error reading record length: %v", err)
-	}
-	rData := make([]byte, rdLength)
-	_, err = io.ReadFull(r, rData)
-	if err != nil {
-		return rr{}, fmt.Errorf("error reading record: %v", err)
-	}
-
-	return rr{
-		name:  name,
-		typ:   typ,
-		clazz: clazz,
-		ttl:   ttl,
-		rData: rData,
-	}, nil
-}
-
 type question struct {
 	name  []byte
 	typ   uint16
 	clazz uint16
-}
-
-func parseQuestion(r io.Reader) (question, error) {
-	name, err := readLengthPrefixedLabels(r)
-	if err != nil {
-		return question{}, err
-	}
-
-	// TODO: validate
-	typ, err := readUint16(r)
-	if err != nil {
-		return question{}, err
-	}
-
-	// TODO: validate
-	clazz, err := readUint16(r)
-	if err != nil {
-		return question{}, err
-	}
-
-	return question{
-		name:  name,
-		typ:   typ,
-		clazz: clazz,
-	}, nil
 }
 
 type packet struct {
@@ -141,59 +275,6 @@ type packet struct {
 	answers    []rr
 	authority  []rr
 	additional []rr
-}
-
-func parsePacket(r io.Reader) (*packet, error) {
-	id, err := readUint16(r)
-	if err != nil {
-		return nil, err
-	}
-	flags, err := readUint16(r)
-	if err != nil {
-		return nil, err
-	}
-	qdCount, err := readUint16(r)
-	if err != nil {
-		return nil, err
-	}
-	anCount, err := readUint16(r)
-	if err != nil {
-		return nil, err
-	}
-	_, err = readUint16(r)
-	if err != nil {
-		return nil, err
-	}
-	_, err = readUint16(r)
-	if err != nil {
-		return nil, err
-	}
-
-	questions := make([]question, 0, qdCount)
-	for range qdCount {
-		question, err := parseQuestion(r)
-		if err != nil {
-			return nil, err
-		}
-
-		questions = append(questions, question)
-	}
-
-	answers := make([]rr, 0, anCount)
-	for range anCount {
-		answer, err := parseRR(r)
-		if err != nil {
-			return nil, err
-		}
-
-		answers = append(answers, answer)
-	}
-
-	return &packet{
-		id:        id,
-		flags:     flags,
-		questions: questions,
-	}, nil
 }
 
 func (p *packet) valid() error {
@@ -316,42 +397,4 @@ func encodeHostname(hostname string) ([]byte, error) {
 	retval = append(retval, 0)
 
 	return retval, nil
-}
-
-func readUint32(r io.Reader) (uint32, error) {
-	var v uint32
-	err := binary.Read(r, binary.BigEndian, &v)
-	return v, err
-}
-
-func readUint16(r io.Reader) (uint16, error) {
-	var v uint16
-	err := binary.Read(r, binary.BigEndian, &v)
-	return v, err
-}
-
-func readLengthPrefixedLabels(r io.Reader) ([]byte, error) {
-	buf := new(bytes.Buffer)
-
-	for {
-		lenByte := make([]byte, 1)
-		_, err := io.ReadFull(r, lenByte)
-		if err != nil {
-			return nil, fmt.Errorf("error reading len: %v", err)
-		}
-		_, _ = buf.Write(lenByte)
-
-		if lenByte[0] == 0 {
-			break
-		}
-
-		labelBytes := make([]byte, lenByte[0])
-		_, err = io.ReadFull(r, labelBytes)
-		if err != nil {
-			return nil, fmt.Errorf("error reading label: %v", err)
-		}
-		_, _ = buf.Write(labelBytes)
-	}
-
-	return buf.Bytes(), nil
 }

@@ -49,7 +49,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(packet)
+	fmt.Printf("%+v", packet)
 }
 
 type packetParser struct {
@@ -140,7 +140,7 @@ func (p *packetParser) parse() (packet, error) {
 }
 
 func (p *packetParser) parseQuestion() (question, error) {
-	name, err := p.readLengthPrefixedLabels()
+	name, err := p.readName()
 	if err != nil {
 		return question{}, err
 	}
@@ -165,8 +165,7 @@ func (p *packetParser) parseQuestion() (question, error) {
 }
 
 func (p *packetParser) parseRR() (rr, error) {
-	// FIXME: instead of length-prefixed labels, the name could be a pointer offset.
-	name, err := p.readLengthPrefixedLabels()
+	name, err := p.readName()
 	if err != nil {
 		return rr{}, fmt.Errorf("error reading name: %v", err)
 	}
@@ -216,28 +215,62 @@ func (p *packetParser) readUint16() (uint16, error) {
 	return uint16(b[0])<<8 | uint16(b[1]), nil
 }
 
-func (p *packetParser) readLengthPrefixedLabels() ([]byte, error) {
+func (p *packetParser) readName() ([]byte, error) {
+	name, consumed, err := p.readNameAt(p.cur, map[int]bool{})
+	if err != nil {
+		return nil, err
+	}
+	p.cur += consumed
+	return name, nil
+}
+
+func (p *packetParser) readNameAt(pos int, seen map[int]bool) ([]byte, int, error) {
+	if pos >= len(p.rawPacket) {
+		return nil, 0, fmt.Errorf("name offset out of bounds: %d", pos)
+	}
+	if seen[pos] {
+		return nil, 0, fmt.Errorf("compression loop detected at offset %d", pos)
+	}
+	seen[pos] = true
+
 	buf := new(bytes.Buffer)
+	length := p.rawPacket[pos]
 
-	for {
-		lenByte, err := p.readBytes(1)
+	switch {
+	case length == 0:
+		_ = buf.WriteByte(0)
+		return buf.Bytes(), 1, nil
+	case length&0xC0 == 0xC0:
+		if pos+1 >= len(p.rawPacket) {
+			return nil, 0, fmt.Errorf("unexpected EOF while reading compression pointer")
+		}
+
+		offset := int(length&0x3F)<<8 | int(p.rawPacket[pos+1])
+		pointedName, _, err := p.readNameAt(offset, seen)
 		if err != nil {
-			return nil, fmt.Errorf("error reading len: %v", err)
+			return nil, 0, err
 		}
-		_, _ = buf.Write(lenByte)
-
-		if lenByte[0] == 0 {
-			break
-		}
-
-		labelBytes, err := p.readBytes(int(lenByte[0]))
-		if err != nil {
-			return nil, fmt.Errorf("error reading label: %v", err)
-		}
-		_, _ = buf.Write(labelBytes)
+		_, _ = buf.Write(pointedName)
+		return buf.Bytes(), 2, nil
+	case length&0xC0 != 0:
+		return nil, 0, fmt.Errorf("invalid label length byte: 0x%02x", length)
 	}
 
-	return buf.Bytes(), nil
+	labelLen := int(length)
+	labelStart := pos + 1
+	labelEnd := labelStart + labelLen
+	if labelEnd > len(p.rawPacket) {
+		return nil, 0, fmt.Errorf("unexpected EOF while reading label")
+	}
+
+	_ = buf.WriteByte(length)
+	_, _ = buf.Write(p.rawPacket[labelStart:labelEnd])
+	nextNamePart, consumed, err := p.readNameAt(labelEnd, seen)
+	if err != nil {
+		return nil, 0, err
+	}
+	_, _ = buf.Write(nextNamePart)
+	return buf.Bytes(), 1 + labelLen + consumed, nil
 }
 
 func (p *packetParser) readBytes(n int) ([]byte, error) {

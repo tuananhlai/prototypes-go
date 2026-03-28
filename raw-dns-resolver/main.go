@@ -49,7 +49,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("%+v", packet)
+
+	fmt.Printf("%+v\n", packet)
 }
 
 type packetParser struct {
@@ -431,3 +432,29 @@ func encodeHostname(hostname string) ([]byte, error) {
 
 	return retval, nil
 }
+
+// func decodeLengthPrefixedLabel(v []byte) (string, error) {
+// 	var parts []string
+
+// 	cur := 0
+// 	for {
+// 		if cur >= len(v) {
+// 			return "", errors.New("")
+// 		}
+
+// 		partLen := v[cur]
+// 		if partLen == 0 {
+// 			break
+// 		}
+
+// 		partStart, partEnd := cur+1, cur+1+int(partLen)
+// 		if partEnd > len(v) {
+// 			return "", fmt.Errorf("error invalid part length at offset %v", cur)
+// 		}
+
+// 		parts = append(parts, string(v[partStart:partEnd]))
+// 		cur = partEnd
+// 	}
+
+// 	return strings.Join(parts, "."), nil
+// }

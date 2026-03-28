@@ -1,7 +1,5 @@
 FROM mcr.microsoft.com/devcontainers/go:1.25-bookworm
 
-RUN apt-get update && apt-get upgrade -y
-
 # Use `zsh` as the default shell.
 RUN chsh -s $(which zsh) vscode
 

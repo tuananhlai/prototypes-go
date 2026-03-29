@@ -2,17 +2,25 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"golang.org/x/sys/unix"
 )
 
 func main() {
-	cwd, err := unix.Getwd()
+	var wd string
+	var err error
+	if len(os.Args) == 1 {
+		wd, err = unix.Getwd()
+	} else {
+		wd = os.Args[1]
+	}
+
 	if err != nil {
 		panic(err)
 	}
 
-	fd, err := unix.Open(cwd, unix.O_RDONLY, 0o644)
+	fd, err := unix.Open(wd, unix.O_RDONLY, 0o644)
 	if err != nil {
 		panic(err)
 	}

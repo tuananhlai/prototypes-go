@@ -23,6 +23,8 @@ func main() {
 		// Read the next directory entries from the cwd's file descriptor.
 		// The method tries to read as many **complete** directory entries into
 		// buf as possible before returning.
+		//
+		// Regular `Read` system call will return EISDIR
 		n, err := unix.ReadDirent(fd, buf)
 		if err != nil {
 			panic(err)

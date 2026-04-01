@@ -1,9 +1,14 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
+	"text/tabwriter"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -30,23 +35,62 @@ func main() {
 
 	entryNames, err := readDir(fd)
 	if err != nil {
+		if errors.Is(err, unix.ENOTDIR) {
+			fmt.Println(wd)
+			return
+		}
+
 		panic(err)
 	}
 
 	slices.Sort(entryNames)
 
+	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+
 	for _, name := range entryNames {
 		if !*displayHiddenFiles && isHiddenFile(name) {
 			continue
 		}
-		fmt.Println(name)
+
+		fullPath := filepath.Join(wd, name)
+
+		statT, err := stat(fullPath)
+		if err != nil {
+			panic(err)
+		}
+
+		lastAccessTime := timespecToUnix(statT.Atim)
+
+		fmt.Fprintf(writer, "%s\t%d\t%d\t%d\t%s\t%s\t%s\n",
+			formatMode(statT.Mode), statT.Uid, statT.Gid, statT.Size,
+			lastAccessTime.Format("Jan 2"),
+			lastAccessTime.Format("15:04"),
+			colorize(name, colorBlue),
+		)
 	}
+
+	err = writer.Flush()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func timespecToUnix(ts unix.Timespec) time.Time {
+	return time.Unix(ts.Sec, ts.Nsec)
 }
 
 func isHiddenFile(fileName string) bool {
 	return len(fileName) > 0 && fileName[0] == '.'
 }
 
+// stat returns an object containing metadata of the file at the given path.
+func stat(filePath string) (unix.Stat_t, error) {
+	var statT unix.Stat_t
+	err := unix.Stat(filePath, &statT)
+	return statT, err
+}
+
+// readDir returns a slice of entry names in the directory specified by the given file descriptor.
 func readDir(fd int) ([]string, error) {
 	var retval []string
 
@@ -71,4 +115,47 @@ func readDir(fd int) ([]string, error) {
 	}
 
 	return retval, nil
+}
+
+const (
+	reset     = "\033[0m"
+	colorBlue = "\033[34m"
+)
+
+func colorize(text, color string) string {
+	return fmt.Sprintf("%s%s%s", color, text, reset)
+}
+
+// formatMode returns a string representation of the file mode.
+func formatMode(mode uint32) string {
+	retval := []byte("---------")
+	if mode&unix.S_IRUSR != 0 {
+		retval[0] = 'r'
+	}
+	if mode&unix.S_IWUSR != 0 {
+		retval[1] = 'w'
+	}
+	if mode&unix.S_IXUSR != 0 {
+		retval[2] = 'x'
+	}
+	if mode&unix.S_IRGRP != 0 {
+		retval[3] = 'r'
+	}
+	if mode&unix.S_IWGRP != 0 {
+		retval[4] = 'w'
+	}
+	if mode&unix.S_IXGRP != 0 {
+		retval[5] = 'x'
+	}
+	if mode&unix.S_IROTH != 0 {
+		retval[6] = 'r'
+	}
+	if mode&unix.S_IWOTH != 0 {
+		retval[7] = 'w'
+	}
+	if mode&unix.S_IXOTH != 0 {
+		retval[8] = 'x'
+	}
+
+	return string(retval)
 }

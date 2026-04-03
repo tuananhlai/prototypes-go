@@ -101,16 +101,14 @@ const (
 	MethodOptions Method = "OPTIONS"
 )
 
-var (
-	validMethods = map[Method]bool{
-		MethodGet:     true,
-		MethodPost:    true,
-		MethodPut:     true,
-		MethodDelete:  true,
-		MethodPatch:   true,
-		MethodOptions: true,
-	}
-)
+var validMethods = map[Method]bool{
+	MethodGet:     true,
+	MethodPost:    true,
+	MethodPut:     true,
+	MethodDelete:  true,
+	MethodPatch:   true,
+	MethodOptions: true,
+}
 
 type Request struct {
 	method  Method

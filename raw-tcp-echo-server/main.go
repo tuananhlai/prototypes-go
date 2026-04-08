@@ -24,20 +24,22 @@ func main() {
 		panic(err)
 	}
 
-	nfd, _, err := unix.Accept(sockfd)
-	if err != nil {
-		panic(err)
-	}
-
-	buf := make([]byte, 4096)
-
-	// TODO: handle multiple connections in parallel.
 	for {
-		n, _, err := unix.Recvfrom(nfd, buf, 0)
+		nfd, _, err := unix.Accept(sockfd)
 		if err != nil {
 			panic(err)
 		}
 
-		_, _ = unix.Write(unix.Stdout, buf[:n])
+		go func() {
+			for {
+				buf := make([]byte, 4096)
+				n, _, err := unix.Recvfrom(nfd, buf, 0)
+				if err != nil {
+					break
+				}
+
+				_, _ = unix.Write(unix.Stdout, buf[:n])
+			}
+		}()
 	}
 }

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -61,11 +64,26 @@ func main() {
 
 		lastAccessTime := timespecToUnix(statT.Atim)
 
-		fmt.Fprintf(writer, "%s\t%d\t%d\t%d\t%s\t%s\t%s\n",
-			formatMode(statT.Mode), statT.Uid, statT.Gid, statT.Size,
+		formattedName := name
+		if isDir(statT) {
+			formattedName = colorize(name, colorBlue)
+		}
+
+		username, err := lookupUsername(statT.Uid)
+		if err != nil {
+			panic(err)
+		}
+
+		groupName, err := lookupGroup(statT.Gid)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
+			formatMode(statT.Mode), username, groupName, statT.Size,
 			lastAccessTime.Format("Jan 2"),
 			lastAccessTime.Format("15:04"),
-			colorize(name, colorBlue),
+			formattedName,
 		)
 	}
 
@@ -88,6 +106,10 @@ func stat(filePath string) (unix.Stat_t, error) {
 	var statT unix.Stat_t
 	err := unix.Stat(filePath, &statT)
 	return statT, err
+}
+
+func isDir(statT unix.Stat_t) bool {
+	return statT.Mode&unix.S_IFMT == unix.S_IFDIR
 }
 
 // readDir returns a slice of entry names in the directory specified by the given file descriptor.
@@ -158,4 +180,67 @@ func formatMode(mode uint32) string {
 	}
 
 	return string(retval)
+}
+
+// lookupUsername converts uid to a username.
+func lookupUsername(uid uint32) (string, error) {
+	f, err := os.Open("/etc/passwd")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	uidS := fmt.Sprintf("%d", uid)
+	rdr := bufio.NewReader(f)
+	for {
+		line, err := rdr.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return "", err
+		}
+		if line == "" || line[0] == '#' {
+			continue
+		}
+
+		parts := strings.Split(line, ":")
+		if len(parts) >= 3 && parts[2] == uidS {
+			return parts[0], nil
+		}
+	}
+
+	return "", fmt.Errorf("uid %s not found", uidS)
+}
+
+// lookupGroup converts gid to a group name.
+func lookupGroup(gid uint32) (string, error) {
+	f, err := os.Open("/etc/group")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	gidS := fmt.Sprintf("%d", gid)
+	rdr := bufio.NewReader(f)
+	for {
+		line, err := rdr.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			return "", err
+		}
+		if line == "" || line[0] == '#' {
+			continue
+		}
+
+		parts := strings.Split(line, ":")
+		if len(parts) >= 3 && parts[2] == gidS {
+			return parts[0], nil
+		}
+	}
+
+	return "", fmt.Errorf("gid %s not found", gidS)
 }

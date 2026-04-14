@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"net"
 
 	"golang.org/x/sys/unix"
@@ -21,12 +19,12 @@ func main() {
 	// the kernel picks TCP (`IPPROTO_TCP`). You could also pass `unix.IPPROTO_TCP` explicitly.
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	ipAddr, err := net.ResolveIPAddr("ip", host)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	err = unix.Connect(fd, &unix.SockaddrInet4{
@@ -34,29 +32,26 @@ func main() {
 		Port: port,
 	})
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	body := []byte("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
 	// Same as unix.Write(fd, body) because no flags is passed.
 	err = unix.Send(fd, body, 0)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
-
-	var resp []byte
 
 	buf := make([]byte, 256)
 	for {
 		n, err := unix.Read(fd, buf)
 		if err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 		if n == 0 {
 			break
 		}
-		resp = append(resp, buf[:n]...)
-	}
 
-	fmt.Println(string(resp))
+		unix.Write(unix.Stdout, buf[:n])
+	}
 }

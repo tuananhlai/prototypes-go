@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/go:1.25-bookworm
+FROM mcr.microsoft.com/devcontainers/go:1.26-bookworm
 
 # Use `zsh` as the default shell.
 RUN chsh -s $(which zsh) vscode

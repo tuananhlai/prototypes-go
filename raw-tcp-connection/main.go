@@ -21,6 +21,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer unix.Close(fd)
 
 	ipAddr, err := net.ResolveIPAddr("ip", host)
 	if err != nil {

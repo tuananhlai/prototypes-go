@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -191,15 +190,14 @@ func lookupUsername(uid uint32) (string, error) {
 	defer f.Close()
 
 	uidS := fmt.Sprintf("%d", uid)
-	rdr := bufio.NewReader(f)
+	scanner := bufio.NewScanner(f)
 	for {
-		line, err := rdr.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return "", err
+		ok := scanner.Scan()
+		if !ok {
+			return "", scanner.Err()
 		}
+
+		line := scanner.Text()
 		if line == "" || line[0] == '#' {
 			continue
 		}
@@ -209,8 +207,6 @@ func lookupUsername(uid uint32) (string, error) {
 			return parts[0], nil
 		}
 	}
-
-	return "", fmt.Errorf("uid %s not found", uidS)
 }
 
 // lookupGroup converts gid to a group name.
@@ -222,16 +218,14 @@ func lookupGroup(gid uint32) (string, error) {
 	defer f.Close()
 
 	gidS := fmt.Sprintf("%d", gid)
-	rdr := bufio.NewReader(f)
+	scanner := bufio.NewScanner(f)
 	for {
-		line, err := rdr.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			return "", err
+		ok := scanner.Scan()
+		if !ok {
+			return "", scanner.Err()
 		}
+
+		line := scanner.Text()
 		if line == "" || line[0] == '#' {
 			continue
 		}
@@ -241,6 +235,4 @@ func lookupGroup(gid uint32) (string, error) {
 			return parts[0], nil
 		}
 	}
-
-	return "", fmt.Errorf("gid %s not found", gidS)
 }

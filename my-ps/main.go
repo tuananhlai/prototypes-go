@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	fd, err := unix.Open("/proc", unix.O_RDONLY|unix.O_DIRECTORY, 0)
+	fd, err := unix.Open("/proc", unix.O_RDONLY, 0)
 	if err != nil {
 		panic(err)
 	}

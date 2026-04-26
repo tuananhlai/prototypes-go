@@ -44,11 +44,11 @@ func main() {
 		// A process is ephemeral, so it and the associated `/proc/{pid}` directory
 		// might disappear right after we read that entry into memory.
 		// Therefore, we will silently ignore any error that occur while retrieving a process's uid.
-		uid, err := getRealUid(entryName)
+		procStat, err := getProcessStat(entryName)
 		if err != nil {
 			continue
 		}
-		fmt.Fprintf(writer, "%s\t%s\n", entryName, uid)
+		fmt.Fprintf(writer, "%s\t%s\n", entryName, procStat.realUID)
 	}
 
 	err = writer.Flush()
@@ -57,33 +57,62 @@ func main() {
 	}
 }
 
-// getRealUid returns the real uid of the user who started the process
-// with the given ID.
-func getRealUid(pid string) (string, error) {
-	name := fmt.Sprintf("/proc/%s/status", pid)
-	fd, err := unix.Open(name, unix.O_RDONLY, 0)
-	if err != nil {
-		return "", err
-	}
-	defer unix.Close(fd)
+type processStat struct {
+	realUID string
+	ppid    string
+}
 
-	scanner := bufio.NewScanner(os.NewFile(uintptr(fd), name))
+// getProcessStat returns information related to a particular process.
+func getProcessStat(pid string) (processStat, error) {
+	var retval processStat
+
+	keyToSetFn := map[string]func(value string) error{
+		"Uid": func(value string) error {
+			// [real uid] [effective uid] [saved set uid] [filesystem uid]
+			uidParts := strings.Fields(value)
+			retval.realUID = uidParts[0]
+			return nil
+		},
+		"PPid": func(value string) error {
+			retval.ppid = strings.TrimSpace(value)
+			return nil
+		},
+	}
+
+	file, err := os.Open(fmt.Sprintf("/proc/%s/status", pid))
+	if err != nil {
+		return processStat{}, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
 	for {
 		ok := scanner.Scan()
 		if !ok {
-			return "", scanner.Err()
+			err = scanner.Err()
+			if err == nil {
+				break
+			}
+
+			return processStat{}, err
 		}
 
 		line := scanner.Text()
-		parts := strings.Split(line, ":")
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			return processStat{}, fmt.Errorf("error malformed line: %s", line)
+		}
 
-		key := parts[0]
-		if key != "Uid" {
+		setFn, ok := keyToSetFn[key]
+		if !ok {
 			continue
 		}
 
-		// [real uid] [effective uid] [saved set uid] [filesystem uid]
-		uidParts := strings.Fields(parts[1])
-		return uidParts[0], nil
+		err = setFn(value)
+		if err != nil {
+			return processStat{}, err
+		}
 	}
+
+	return retval, nil
 }

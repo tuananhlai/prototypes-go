@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -34,7 +35,8 @@ func main() {
 	}
 
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-	fmt.Fprint(writer, "pid\tuid\n")
+	fmt.Fprintln(writer, "pid\tname\tstate\tppid\tuid\tthreads\tvmsize\tvmrss")
+
 	pidRegex := regexp.MustCompile("^[0-9]+$")
 	for _, entryName := range entryNames {
 		if !pidRegex.MatchString(entryName) {
@@ -43,76 +45,70 @@ func main() {
 
 		// A process is ephemeral, so it and the associated `/proc/{pid}` directory
 		// might disappear right after we read that entry into memory.
-		// Therefore, we will silently ignore any error that occur while retrieving a process's uid.
-		procStat, err := getProcessStat(entryName)
+		// Therefore, we will silently ignore any errors that occur while retrieving process info.
+		stat, err := getProcessStat(entryName)
 		if err != nil {
 			continue
 		}
-		fmt.Fprintf(writer, "%s\t%s\n", entryName, procStat.realUID)
+
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			entryName, stat.name, stat.state, stat.ppid, stat.realUID, stat.threads, stat.vmSize, stat.vmRSS)
 	}
 
-	err = writer.Flush()
-	if err != nil {
+	if err := writer.Flush(); err != nil {
 		panic(err)
 	}
 }
 
 type processStat struct {
-	realUID string
+	name    string
+	state   string
 	ppid    string
+	realUID string
+	threads string
+	vmSize  string
+	vmRSS   string
 }
 
-// getProcessStat returns information related to a particular process.
 func getProcessStat(pid string) (processStat, error) {
-	var retval processStat
-
-	keyToSetFn := map[string]func(value string) error{
-		"Uid": func(value string) error {
-			// [real uid] [effective uid] [saved set uid] [filesystem uid]
-			uidParts := strings.Fields(value)
-			retval.realUID = uidParts[0]
-			return nil
-		},
-		"PPid": func(value string) error {
-			retval.ppid = strings.TrimSpace(value)
-			return nil
-		},
-	}
-
 	file, err := os.Open(fmt.Sprintf("/proc/%s/status", pid))
 	if err != nil {
 		return processStat{}, err
 	}
 	defer file.Close()
+	return parseProcessStatus(file)
+}
 
-	scanner := bufio.NewScanner(file)
-	for {
-		ok := scanner.Scan()
-		if !ok {
-			err = scanner.Err()
-			if err == nil {
-				break
-			}
+func parseProcessStatus(r io.Reader) (processStat, error) {
+	var stat processStat
 
-			return processStat{}, err
-		}
-
-		line := scanner.Text()
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			return processStat{}, fmt.Errorf("error malformed line: %s", line)
-		}
-
-		setFn, ok := keyToSetFn[key]
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		key, value, ok := strings.Cut(scanner.Text(), ":")
 		if !ok {
 			continue
 		}
-
-		err = setFn(value)
-		if err != nil {
-			return processStat{}, err
+		value = strings.TrimSpace(value)
+		switch key {
+		case "Name":
+			stat.name = value
+		case "State":
+			stat.state = value
+		case "PPid":
+			stat.ppid = value
+		case "Uid":
+			// [real uid] [effective uid] [saved set uid] [filesystem uid]
+			if fields := strings.Fields(value); len(fields) > 0 {
+				stat.realUID = fields[0]
+			}
+		case "Threads":
+			stat.threads = value
+		case "VmSize":
+			stat.vmSize = value
+		case "VmRSS":
+			stat.vmRSS = value
 		}
 	}
 
-	return retval, nil
+	return stat, scanner.Err()
 }

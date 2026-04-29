@@ -9,6 +9,15 @@ import (
 )
 
 func main() {
+	var err error
+	rootPid := 1
+	if len(os.Args) > 1 {
+		rootPid, err = strconv.Atoi(os.Args[1])
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		panic(err)
@@ -35,18 +44,32 @@ func main() {
 		children[stat.ppid] = append(children[stat.ppid], pid)
 	}
 
-	var dfs func(pid int, level int)
-	dfs = func(pid int, level int) {
-		stat := pidToStat[pid]
-		fmt.Printf("%s%s (%d)\n", strings.Repeat("    ", level), stat.name, pid)
+	// recursively print out the process id tree. `connector` is the string
+	// to print before the process name. `prefix` is the string to print
+	// before printing this process's descendants.
+	var printTree func(pid int, connector, prefix string)
+	printTree = func(pid int, connector, prefix string) {
+		stat, ok := pidToStat[pid]
+		if !ok {
+			return
+		}
 
-		for _, childPid := range children[pid] {
-			dfs(childPid, level+1)
+		fmt.Printf("%s%s (%d)\n", connector, stat.name, pid)
+
+		for i, child := range children[pid] {
+			isLastChild := i == len(children[pid])-1
+
+			if isLastChild {
+				printTree(child, prefix+"└── ", prefix+"    ")
+				continue
+			}
+
+			printTree(child, prefix+"├── ", prefix+"│   ")
 		}
 	}
 
 	// start printing from init process
-	dfs(1, 0)
+	printTree(rootPid, "", "")
 }
 
 type processStat struct {

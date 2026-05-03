@@ -58,13 +58,15 @@ func main() {
 
 		for i, child := range children[pid] {
 			isLastChild := i == len(children[pid])-1
+			newConnector := prefix + "├── "
+			newPrefix := prefix + "│   "
 
 			if isLastChild {
-				printTree(child, prefix+"└── ", prefix+"    ")
-				continue
+				newConnector = prefix + "└── "
+				newPrefix = prefix + "    "
 			}
 
-			printTree(child, prefix+"├── ", prefix+"│   ")
+			printTree(child, newConnector, newPrefix)
 		}
 	}
 

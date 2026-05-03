@@ -78,3 +78,29 @@ func (s *ComplianceTestSuite) TestMultipleClients() {
 		s.Equal("PONG\n", result.out)
 	}
 }
+
+func (s *ComplianceTestSuite) TestEcho() {
+	cmd := exec.Command("redis-cli", "ECHO", "hello")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("hello\n", string(out))
+}
+
+func (s *ComplianceTestSuite) TestSetGet() {
+	cmd := exec.Command("redis-cli", "SET", "foo", "bar")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("OK\n", string(out))
+
+	// Get existing key
+	cmd = exec.Command("redis-cli", "GET", "foo")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("bar\n", string(out))
+
+	// Get non-existent key
+	cmd = exec.Command("redis-cli", "GET", "baz")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("\n", string(out))
+}

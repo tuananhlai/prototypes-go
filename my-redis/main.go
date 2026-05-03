@@ -52,7 +52,7 @@ func handleConn(conn net.Conn) {
 
 		res, err := execute(cmd)
 		if err != nil {
-			fmt.Printf("error executing command: %v\n", err)
+			res = []byte("-ERR " + err.Error() + "\r\n")
 		}
 
 		_, err = bufrw.Write(res)
@@ -69,14 +69,14 @@ func handleConn(conn net.Conn) {
 
 func execute(cmd [][]byte) ([]byte, error) {
 	if len(cmd) == 0 {
-		return nil, errors.New("error empty command")
+		return nil, errors.New("empty command")
 	}
 	name := strings.ToUpper(string(cmd[0]))
 	args := cmd[1:]
 
 	executer, ok := commands[name]
 	if !ok {
-		return nil, fmt.Errorf("error unsupported command name: %v", name)
+		return nil, fmt.Errorf("unsupported command name: %v", name)
 	}
 
 	return executer(args)
@@ -92,13 +92,13 @@ var commands = map[string]executer{
 	},
 	"ECHO": func(args [][]byte) (out []byte, err error) {
 		if len(args) == 0 {
-			return nil, errors.New("error missing argument")
+			return nil, errors.New("missing argument")
 		}
 		return serializeBulkString(args[0])
 	},
 	"SET": func(args [][]byte) (out []byte, err error) {
 		if len(args) != 2 {
-			return nil, fmt.Errorf("error invalid number of arguments: expect 2, got %d", len(args))
+			return nil, fmt.Errorf("invalid number of arguments: expect 2, got %d", len(args))
 		}
 
 		key, val := string(args[0]), args[1]
@@ -108,7 +108,7 @@ var commands = map[string]executer{
 	},
 	"GET": func(args [][]byte) (out []byte, err error) {
 		if len(args) != 1 {
-			return nil, fmt.Errorf("error invalid number of arguments: expect 1, got %d", len(args))
+			return nil, fmt.Errorf("invalid number of arguments: expect 1, got %d", len(args))
 		}
 
 		key := string(args[0])

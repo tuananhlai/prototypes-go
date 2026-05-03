@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net"
 	"os/exec"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -100,6 +102,28 @@ func (s *ComplianceTestSuite) TestSetGet() {
 
 	// Get non-existent key
 	cmd = exec.Command("redis-cli", "GET", "baz")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("\n", string(out))
+}
+
+func (s *ComplianceTestSuite) TestSetWithExpiry() {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "redis-cli", "SET", "foo", "bar", "PX", "100")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("OK\n", string(out))
+
+	cmd = exec.CommandContext(ctx, "redis-cli", "GET", "foo")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("bar\n", string(out))
+
+	time.Sleep(200 * time.Millisecond)
+
+	cmd = exec.CommandContext(ctx, "redis-cli", "GET", "foo")
 	out, err = cmd.CombinedOutput()
 	s.Require().NoError(err)
 	s.Equal("\n", string(out))

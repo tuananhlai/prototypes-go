@@ -3,7 +3,7 @@ package main
 import "golang.org/x/sys/unix"
 
 func main() {
-	fd, err := unix.Open("./test.txt", unix.O_RDWR|unix.O_CREAT|unix.O_TRUNC, 0o644)
+	fd, err := unix.Open("./test1.txt", unix.O_RDWR|unix.O_CREAT|unix.O_TRUNC, 0o644)
 	if err != nil {
 		panic(err)
 	}

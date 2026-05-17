@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/tuananhlai/prototypes/my-redis/resp"
 )
@@ -74,7 +75,8 @@ func handleConn(conn net.Conn, executer *executer) {
 }
 
 type entry struct {
-	val []byte
+	val       []byte
+	expiredAt *time.Time
 }
 
 type store struct {
@@ -88,11 +90,15 @@ func newStore() *store {
 	}
 }
 
-func (s *store) set(key string, val []byte) {
+func (s *store) set(key string, val []byte, options *setOptions) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.mp[key] = entry{val: val}
+	ent := entry{
+		val:       val,
+		expiredAt: options.expiredAt,
+	}
+	s.mp[key] = ent
 }
 
 func (s *store) get(key string) ([]byte, bool) {
@@ -100,5 +106,15 @@ func (s *store) get(key string) ([]byte, bool) {
 	defer s.mu.RUnlock()
 
 	e, ok := s.mp[key]
+	if !ok {
+		return nil, false
+	}
+	if e.expiredAt != nil && time.Now().After(*e.expiredAt) {
+		return nil, false
+	}
 	return e.val, ok
+}
+
+type setOptions struct {
+	expiredAt *time.Time
 }

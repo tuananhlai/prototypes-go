@@ -10,10 +10,7 @@ import (
 func TestSerializeBulkString(t *testing.T) {
 	expected := []byte("$12\r\ngood morning\r\n")
 
-	got, err := resp.SerializeBulkString([]byte("good morning"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := resp.SerializeBulkString([]byte("good morning"))
 
 	if !reflect.DeepEqual(got, expected) {
 		t.Fatalf("expected %v, got %v", expected, got)

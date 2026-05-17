@@ -9,12 +9,11 @@ var NullBulkString = []byte{respTypeBulkString, '-', '1', '\r', '\n'}
 
 // SerializeBulkString encodes the given bytes into a RESP bulk string. If it is null,
 // a serialized null bulk string will be returned.
-func SerializeBulkString(b []byte) ([]byte, error) {
+func SerializeBulkString(b []byte) []byte {
 	if b == nil {
-		return NullBulkString, nil
+		return NullBulkString
 	}
 
-	// TODO: return error if len(b) is larger than allowed.
 	strLen := []byte(strconv.Itoa(len(b)))
 
 	retval := []byte{respTypeBulkString}
@@ -23,7 +22,7 @@ func SerializeBulkString(b []byte) ([]byte, error) {
 	retval = append(retval, b...)
 	retval = append(retval, '\r', '\n')
 
-	return retval, nil
+	return retval
 }
 
 func SerializeSimpleString(s string) []byte {

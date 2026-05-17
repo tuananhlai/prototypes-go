@@ -10,19 +10,19 @@ import (
 	"github.com/tuananhlai/prototypes/my-redis/resp"
 )
 
-type executer struct {
+type executor struct {
 	store *store
 }
 
-func newExecuter(store *store) *executer {
-	return &executer{
+func newExecutor(store *store) *executor {
+	return &executor{
 		store: store,
 	}
 }
 
 // execute parses and runs the given command array and returns its
 // output.
-func (ex *executer) execute(cmd [][]byte) []byte {
+func (ex *executor) execute(cmd [][]byte) []byte {
 	if len(cmd) == 0 {
 		return resp.SerializeSimpleError("empty command")
 	}
@@ -36,12 +36,7 @@ func (ex *executer) execute(cmd [][]byte) []byte {
 		if len(args) == 0 {
 			return resp.SerializeSimpleError("missing argument")
 		}
-		res, err := resp.SerializeBulkString(args[0])
-		if err != nil {
-			return resp.SerializeSimpleError(err.Error())
-		}
-
-		return res
+		return resp.SerializeBulkString(args[0])
 	case "GET":
 		if len(args) != 1 {
 			return resp.SerializeSimpleError(fmt.Sprintf(
@@ -54,21 +49,14 @@ func (ex *executer) execute(cmd [][]byte) []byte {
 			return resp.NullBulkString
 		}
 
-		res, err := resp.SerializeBulkString(val)
-		if err != nil {
-			return resp.SerializeSimpleError(err.Error())
-		}
-
-		return res
+		return resp.SerializeBulkString(val)
 	case "SET":
 		setArgs, err := parseSetCmdArgs(args)
 		if err != nil {
 			return resp.SerializeSimpleError(err.Error())
 		}
 
-		ex.store.set(setArgs.key, setArgs.val, &setOptions{
-			expiredAt: setArgs.expiredAt,
-		})
+		ex.store.set(setArgs.key, setArgs.val, setArgs.expiredAt)
 
 		return resp.SerializeSimpleString("OK")
 	default:
@@ -79,7 +67,7 @@ func (ex *executer) execute(cmd [][]byte) []byte {
 type setCmdArgs struct {
 	key       string
 	val       []byte
-	expiredAt *time.Time
+	expiredAt time.Time
 }
 
 func parseSetCmdArgs(args [][]byte) (retval setCmdArgs, err error) {
@@ -96,49 +84,54 @@ func parseSetCmdArgs(args [][]byte) (retval setCmdArgs, err error) {
 		return
 	}
 
-	key, isEOF := read()
-	if isEOF {
+	key, eof := read()
+	if eof {
 		err = errors.New("reading `key`: unexpected EOF")
 		return
 	}
 	retval.key = string(key)
 
-	val, isEOF := read()
-	if isEOF {
+	val, eof := read()
+	if eof {
 		err = errors.New("reading `val`: unexpected EOF")
 		return
 	}
 	retval.val = val
 
-	// parse command options
-	optNameBytes, isEOF := read()
-	if isEOF {
-		return
-	}
-	optName := strings.ToUpper(string(optNameBytes))
-
 	// TODO: parse according to Redis's syntax diagram.
 	// https://redis.io/docs/latest/commands/set/
-	switch optName {
-	case "PX":
-		expiryMillisBytes, isEOF := read()
-		if isEOF {
-			err = fmt.Errorf("reading value for option '%s': unexpected EOF", optNameBytes)
+	for {
+		// parse command options
+		optNameBytes, eof := read()
+		if eof {
 			return
 		}
+		optName := strings.ToUpper(string(optNameBytes))
 
-		var expiryMillis int
-		expiryMillis, err = strconv.Atoi(string(expiryMillisBytes))
-		if err != nil {
-			err = fmt.Errorf("convert duration to int: %w", err)
+		switch optName {
+		case "PX":
+			if !retval.expiredAt.IsZero() {
+				err = errors.New("syntax error: expiry option specified more than once")
+				return
+			}
+
+			expiryMillisBytes, eof := read()
+			if eof {
+				err = fmt.Errorf("reading value for option '%s': unexpected EOF", optNameBytes)
+				return
+			}
+
+			var expiryMillis int
+			expiryMillis, err = strconv.Atoi(string(expiryMillisBytes))
+			if err != nil {
+				err = fmt.Errorf("convert duration to int: %w", err)
+				return
+			}
+
+			retval.expiredAt = time.Now().Add(time.Duration(expiryMillis) * time.Millisecond)
+		default:
+			err = fmt.Errorf("invalid option %s", optName)
 			return
 		}
-
-		expiredAt := time.Now().Add(time.Duration(expiryMillis) * time.Millisecond)
-		retval.expiredAt = &expiredAt
-	default:
-		err = fmt.Errorf("invalid option %s", optName)
 	}
-
-	return
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
@@ -15,7 +16,7 @@ import (
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379")
+		fmt.Fprintln(os.Stderr, "Failed to bind to port 6379")
 		os.Exit(1)
 	}
 	defer l.Close()
@@ -29,20 +30,20 @@ func main() {
 }
 
 func run(l net.Listener) error {
-	executer := newExecuter(newStore())
+	executor := newExecutor(newStore())
 
 	for {
-		// TODO: add connection timeout.
+		// TODO: add connection timeout + limit number of concurrent clients.
 		conn, err := l.Accept()
 		if err != nil {
 			return fmt.Errorf("accepting connection: %v", err)
 		}
 
-		go handleConn(conn, executer)
+		go handleConn(conn, executor)
 	}
 }
 
-func handleConn(conn net.Conn, executer *executer) {
+func handleConn(conn net.Conn, executor *executor) {
 	defer conn.Close()
 
 	bufrw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
@@ -59,24 +60,26 @@ func handleConn(conn net.Conn, executer *executer) {
 
 			res = resp.SerializeSimpleError(err.Error())
 		} else {
-			res = executer.execute(cmd)
+			res = executor.execute(cmd)
 		}
 
 		_, err = bufrw.Write(res)
 		if err != nil {
-			panic(err)
+			slog.Error("write to buffer failed", "err", err)
+			return
 		}
 
 		err = bufrw.Flush()
 		if err != nil {
-			panic(err)
+			slog.Error("flush buffer to client connection failed", "err", err)
+			return
 		}
 	}
 }
 
 type entry struct {
 	val       []byte
-	expiredAt *time.Time
+	expiredAt time.Time
 }
 
 type store struct {
@@ -90,31 +93,27 @@ func newStore() *store {
 	}
 }
 
-func (s *store) set(key string, val []byte, options *setOptions) {
+func (s *store) set(key string, val []byte, expiredAt time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ent := entry{
+	s.mp[key] = entry{
 		val:       val,
-		expiredAt: options.expiredAt,
+		expiredAt: expiredAt,
 	}
-	s.mp[key] = ent
 }
 
 func (s *store) get(key string) ([]byte, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	e, ok := s.mp[key]
 	if !ok {
 		return nil, false
 	}
-	if e.expiredAt != nil && time.Now().After(*e.expiredAt) {
+	if !e.expiredAt.IsZero() && time.Now().After(e.expiredAt) {
+		delete(s.mp, key)
 		return nil, false
 	}
 	return e.val, ok
-}
-
-type setOptions struct {
-	expiredAt *time.Time
 }

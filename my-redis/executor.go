@@ -110,11 +110,6 @@ func parseSetCmdArgs(args [][]byte) (retval setCmdArgs, err error) {
 
 		switch optName {
 		case "PX":
-			if !retval.expiredAt.IsZero() {
-				err = errors.New("syntax error: expiry option specified more than once")
-				return
-			}
-
 			expiryMillisBytes, eof := read()
 			if eof {
 				err = fmt.Errorf("reading value for option '%s': unexpected EOF", optNameBytes)

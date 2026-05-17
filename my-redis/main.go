@@ -2,12 +2,13 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"strings"
+	"sync"
+
+	"github.com/tuananhlai/prototypes/my-redis/resp"
 )
 
 func main() {
@@ -16,6 +17,7 @@ func main() {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
+	defer l.Close()
 
 	fmt.Println("Start server on port 6379")
 	err = run(l)
@@ -26,33 +28,37 @@ func main() {
 }
 
 func run(l net.Listener) error {
+	executer := newExecuter(newStore())
+
 	for {
+		// TODO: add connection timeout.
 		conn, err := l.Accept()
 		if err != nil {
 			return fmt.Errorf("accepting connection: %v", err)
 		}
 
-		go handleConn(conn)
+		go handleConn(conn, executer)
 	}
 }
 
-func handleConn(conn net.Conn) {
+func handleConn(conn net.Conn, executer *executer) {
 	defer conn.Close()
 
 	bufrw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	var res []byte
 
 	for {
-		cmd, err := parse(bufrw.Reader)
+		// A Redis command will always be an non-empty array, with the first argument
+		// being the command name.
+		cmd, err := resp.ParseArray(bufrw.Reader)
 		if err != nil {
 			if err == io.EOF {
 				return
 			}
-			panic(err)
-		}
 
-		res, err := execute(cmd)
-		if err != nil {
-			res = []byte("-ERR " + err.Error() + "\r\n")
+			res = resp.SerializeSimpleError(err.Error())
+		} else {
+			res = executer.execute(cmd)
 		}
 
 		_, err = bufrw.Write(res)
@@ -67,56 +73,32 @@ func handleConn(conn net.Conn) {
 	}
 }
 
-func execute(cmd [][]byte) ([]byte, error) {
-	if len(cmd) == 0 {
-		return nil, errors.New("empty command")
-	}
-	name := strings.ToUpper(string(cmd[0]))
-	args := cmd[1:]
-
-	executer, ok := commands[name]
-	if !ok {
-		return nil, fmt.Errorf("unsupported command name: %v", name)
-	}
-
-	return executer(args)
+type entry struct {
+	val []byte
 }
 
-type executer func(args [][]byte) (out []byte, err error)
+type store struct {
+	mp map[string]entry
+	mu sync.RWMutex
+}
 
-var store = map[string][]byte{}
+func newStore() *store {
+	return &store{
+		mp: make(map[string]entry),
+	}
+}
 
-var commands = map[string]executer{
-	"PING": func(args [][]byte) (out []byte, err error) {
-		return []byte("+PONG\r\n"), nil
-	},
-	"ECHO": func(args [][]byte) (out []byte, err error) {
-		if len(args) == 0 {
-			return nil, errors.New("missing argument")
-		}
-		return serializeBulkString(args[0])
-	},
-	"SET": func(args [][]byte) (out []byte, err error) {
-		if len(args) != 2 {
-			return nil, fmt.Errorf("invalid number of arguments: expect 2, got %d", len(args))
-		}
+func (s *store) set(key string, val []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-		key, val := string(args[0]), args[1]
-		store[key] = val
+	s.mp[key] = entry{val: val}
+}
 
-		return serializeSimpleString("OK")
-	},
-	"GET": func(args [][]byte) (out []byte, err error) {
-		if len(args) != 1 {
-			return nil, fmt.Errorf("invalid number of arguments: expect 1, got %d", len(args))
-		}
+func (s *store) get(key string) ([]byte, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-		key := string(args[0])
-		val, ok := store[key]
-		if !ok {
-			return serializeBulkString(nil)
-		}
-
-		return serializeBulkString(val)
-	},
+	e, ok := s.mp[key]
+	return e.val, ok
 }

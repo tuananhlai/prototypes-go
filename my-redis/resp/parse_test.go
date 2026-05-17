@@ -1,10 +1,11 @@
-package main
+package resp_test
 
 import (
 	"bufio"
-	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/tuananhlai/prototypes/my-redis/resp"
 )
 
 func TestParse(t *testing.T) {
@@ -12,7 +13,7 @@ func TestParse(t *testing.T) {
 	input := "*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n"
 	r := bufio.NewReader(strings.NewReader(input))
 
-	elems, err := parse(r)
+	elems, err := resp.ParseArray(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,21 +30,8 @@ func TestParse(t *testing.T) {
 
 func TestParseUnsupportedType(t *testing.T) {
 	r := bufio.NewReader(strings.NewReader("+OK\r\n"))
-	_, err := parse(r)
+	_, err := resp.ParseArray(r)
 	if err == nil {
 		t.Fatal("expected error for unsupported type")
-	}
-}
-
-func TestSerializeBulkString(t *testing.T) {
-	expected := []byte("$12\r\ngood morning\r\n")
-
-	got, err := serializeBulkString([]byte("good morning"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !reflect.DeepEqual(got, expected) {
-		t.Fatalf("expected %v, got %v", expected, got)
 	}
 }

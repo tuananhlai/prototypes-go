@@ -1,4 +1,4 @@
-package main
+package resp
 
 import (
 	"bufio"
@@ -8,12 +8,14 @@ import (
 	"strconv"
 )
 
+
 const (
 	respTypeArray      = '*'
 	respTypeBulkString = '$'
 )
 
-func parse(r *bufio.Reader) ([][]byte, error) {
+// ParseArray consumes RESP-encoded bytes from the given reader and construct an array from it.
+func ParseArray(r *bufio.Reader) ([][]byte, error) {
 	respType, err := r.ReadByte()
 	if err != nil {
 		return nil, err
@@ -114,28 +116,4 @@ func readUntilCRLF(r *bufio.Reader) ([]byte, error) {
 
 		return retval[:len(retval)-2], nil
 	}
-}
-
-// serializeBulkString encodes the given bytes into a RESP bulk string. If it is null,
-// a serialized null bulk string will be returned.
-func serializeBulkString(b []byte) ([]byte, error) {
-	if b == nil {
-		return []byte{respTypeBulkString, '-', '1', '\r', '\n'}, nil
-	}
-
-	// TODO: return error if len(b) is larger than allowed.
-	strLen := []byte(strconv.Itoa(len(b)))
-
-	retval := []byte{respTypeBulkString}
-	retval = append(retval, strLen...)
-	retval = append(retval, '\r', '\n')
-	retval = append(retval, b...)
-	retval = append(retval, '\r', '\n')
-
-	return retval, nil
-}
-
-func serializeSimpleString(s string) ([]byte, error) {
-	// TODO: add length validation
-	return fmt.Appendf(nil, "+%s\r\n", s), nil
 }

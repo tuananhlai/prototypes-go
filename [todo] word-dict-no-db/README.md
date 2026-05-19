@@ -1,0 +1,6 @@
+- No traditional database
+- Words and meanings updated weekly via changelog
+- Lookup is **always** a singular word
+- Dictionary is 1TB & has 170000 words.
+- No repeated entries.
+- Compact.

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/tuananhlai/prototypes/my-redis/resp"
@@ -126,21 +127,22 @@ func (s *store) get(key string) ([]byte, error) {
 	return val, nil
 }
 
-func (s *store) rpush(key string, newElem []byte) (int, error) {
+func (s *store) rpush(key string, newElems [][]byte) (int, error) {
+	var updatedVal [][]byte
+
 	rawExistingVal, keyAlreadyExists := s.mp[key]
-	var val [][]byte
 	if keyAlreadyExists {
 		existingVal, isValueDataTypeCorrect := rawExistingVal.val.([][]byte)
 		if !isValueDataTypeCorrect {
 			return 0, fmt.Errorf("rpush %s: wrong data type for existing value", key)
 		}
-		val = existingVal
+		updatedVal = existingVal
 	}
 
-	val = append(val, newElem)
+	updatedVal = slices.Concat(updatedVal, newElems)
 	s.mp[key] = entry{
-		val: val,
+		val: updatedVal,
 	}
 
-	return len(val), nil
+	return len(updatedVal), nil
 }

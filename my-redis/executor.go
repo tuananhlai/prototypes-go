@@ -71,16 +71,16 @@ func (ex *executor) loop() {
 			}
 			cmd.reply <- resp.SerializeSimpleString("OK")
 		case "RPUSH":
-			if len(cmd.args) != 2 {
+			if len(cmd.args) < 2 {
 				cmd.reply <- resp.SerializeSimpleError(fmt.Sprintf(
-					"invalid number of arguments: expect 2, got %d", len(cmd.args)))
+					"invalid number of arguments: expect at least 2, got %d", len(cmd.args)))
 				return
 			}
 
 			key := string(cmd.args[0])
-			val := cmd.args[1]
+			values := cmd.args[1:]
 
-			cnt, err := ex.store.rpush(key, val)
+			cnt, err := ex.store.rpush(key, values)
 			if err != nil {
 				cmd.reply <- resp.SerializeSimpleError(err.Error())
 				return

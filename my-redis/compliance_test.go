@@ -114,6 +114,18 @@ func (s *ComplianceTestSuite) TestRPushCreatesNewList() {
 	s.Equal("1\n", string(out))
 }
 
+func (s *ComplianceTestSuite) TestRPushAppendsToExistingList() {
+	cmd := exec.Command("redis-cli", "RPUSH", "list_key", "element1")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("1\n", string(out))
+
+	cmd = exec.Command("redis-cli", "RPUSH", "list_key", "element2")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("2\n", string(out))
+}
+
 func (s *ComplianceTestSuite) TestSetWithExpiry() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

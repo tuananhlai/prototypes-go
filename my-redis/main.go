@@ -127,8 +127,17 @@ func (s *store) get(key string) ([]byte, error) {
 }
 
 func (s *store) rpush(key string, newElem []byte) (int, error) {
-	val := [][]byte{newElem}
+	rawExistingVal, keyAlreadyExists := s.mp[key]
+	var val [][]byte
+	if keyAlreadyExists {
+		existingVal, isValueDataTypeCorrect := rawExistingVal.val.([][]byte)
+		if !isValueDataTypeCorrect {
+			return 0, fmt.Errorf("rpush %s: wrong data type for existing value", key)
+		}
+		val = existingVal
+	}
 
+	val = append(val, newElem)
 	s.mp[key] = entry{
 		val: val,
 	}

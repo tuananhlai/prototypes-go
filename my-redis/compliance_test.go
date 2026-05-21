@@ -107,6 +107,13 @@ func (s *ComplianceTestSuite) TestSetGet() {
 	s.Equal("\n", string(out))
 }
 
+func (s *ComplianceTestSuite) TestRPushCreatesNewList() {
+	cmd := exec.Command("redis-cli", "RPUSH", "list_key", "element")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("1\n", string(out))
+}
+
 func (s *ComplianceTestSuite) TestSetWithExpiry() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

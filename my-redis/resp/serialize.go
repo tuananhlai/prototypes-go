@@ -32,3 +32,7 @@ func SerializeSimpleString(s string) []byte {
 func SerializeSimpleError(s string) []byte {
 	return fmt.Appendf(nil, "-%s\r\n", s)
 }
+
+func SerializeInteger(v int) []byte {
+	return fmt.Appendf(nil, ":%d\r\n", v)
+}

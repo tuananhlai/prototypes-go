@@ -40,30 +40,53 @@ func (ex *executor) loop() {
 		case "ECHO":
 			if len(cmd.args) == 0 {
 				cmd.reply <- resp.SerializeSimpleError("missing argument")
+				return
 			}
 			cmd.reply <- resp.SerializeBulkString(cmd.args[0])
 		case "GET":
 			if len(cmd.args) != 1 {
 				cmd.reply <- resp.SerializeSimpleError(fmt.Sprintf(
 					"invalid number of arguments: expect 1, got %d", len(cmd.args)))
+				return
 			}
 
 			key := string(cmd.args[0])
-			val, ok := ex.store.get(key)
-			if !ok {
-				cmd.reply <- resp.NullBulkString
+			val, err := ex.store.get(key)
+			if err != nil {
+				cmd.reply <- resp.SerializeSimpleError(err.Error())
+				return
 			}
-
 			cmd.reply <- resp.SerializeBulkString(val)
 		case "SET":
 			setArgs, err := parseSetCmdArgs(cmd.args)
 			if err != nil {
 				cmd.reply <- resp.SerializeSimpleError(err.Error())
+				return
 			}
 
-			ex.store.set(setArgs.key, setArgs.val, setArgs.expiredAt)
-
+			err = ex.store.set(setArgs.key, setArgs.val, setArgs.expiredAt)
+			if err != nil {
+				cmd.reply <- resp.SerializeSimpleError(err.Error())
+				return
+			}
 			cmd.reply <- resp.SerializeSimpleString("OK")
+		case "RPUSH":
+			if len(cmd.args) != 2 {
+				cmd.reply <- resp.SerializeSimpleError(fmt.Sprintf(
+					"invalid number of arguments: expect 2, got %d", len(cmd.args)))
+				return
+			}
+
+			key := string(cmd.args[0])
+			val := cmd.args[1]
+
+			cnt, err := ex.store.rpush(key, val)
+			if err != nil {
+				cmd.reply <- resp.SerializeSimpleError(err.Error())
+				return
+			}
+
+			cmd.reply <- resp.SerializeInteger(cnt)
 		default:
 			cmd.reply <- resp.SerializeSimpleError(
 				fmt.Sprintf("unsupported command: %s", cmd.name))

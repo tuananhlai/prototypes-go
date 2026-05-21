@@ -77,7 +77,7 @@ func handleConn(conn net.Conn, executor *executor) {
 }
 
 type entry struct {
-	val       []byte
+	val       any
 	expiredAt time.Time
 }
 
@@ -91,21 +91,47 @@ func newStore() *store {
 	}
 }
 
-func (s *store) set(key string, val []byte, expiredAt time.Time) {
+func (s *store) set(key string, val []byte, expiredAt time.Time) error {
+	rawExistingVal, keyAlreadyExists := s.mp[key]
+	if keyAlreadyExists {
+		if _, isValueDataTypeCorrect := rawExistingVal.val.([]byte); !isValueDataTypeCorrect {
+			return fmt.Errorf("set key %s: wrong data type for existing value", key)
+		}
+	}
+
 	s.mp[key] = entry{
 		val:       val,
 		expiredAt: expiredAt,
 	}
+
+	return nil
 }
 
-func (s *store) get(key string) ([]byte, bool) {
+func (s *store) get(key string) ([]byte, error) {
 	e, ok := s.mp[key]
 	if !ok {
-		return nil, false
+		return nil, nil
 	}
+
+	val, ok := e.val.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("get key %s: invalid data type for value", key)
+	}
+
 	if !e.expiredAt.IsZero() && time.Now().After(e.expiredAt) {
 		delete(s.mp, key)
-		return nil, false
+		return nil, nil
 	}
-	return e.val, ok
+
+	return val, nil
+}
+
+func (s *store) rpush(key string, newElem []byte) (int, error) {
+	val := [][]byte{newElem}
+
+	s.mp[key] = entry{
+		val: val,
+	}
+
+	return len(val), nil
 }

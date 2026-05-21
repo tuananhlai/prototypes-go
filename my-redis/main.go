@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/tuananhlai/prototypes/my-redis/resp"
@@ -84,7 +83,6 @@ type entry struct {
 
 type store struct {
 	mp map[string]entry
-	mu sync.RWMutex
 }
 
 func newStore() *store {
@@ -94,9 +92,6 @@ func newStore() *store {
 }
 
 func (s *store) set(key string, val []byte, expiredAt time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.mp[key] = entry{
 		val:       val,
 		expiredAt: expiredAt,
@@ -104,9 +99,6 @@ func (s *store) set(key string, val []byte, expiredAt time.Time) {
 }
 
 func (s *store) get(key string) ([]byte, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	e, ok := s.mp[key]
 	if !ok {
 		return nil, false

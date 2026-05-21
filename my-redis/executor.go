@@ -10,58 +10,87 @@ import (
 	"github.com/tuananhlai/prototypes/my-redis/resp"
 )
 
+type command struct {
+	name  string
+	args  [][]byte
+	reply chan []byte
+}
+
+// executor parses and runs commands in a single thread.
 type executor struct {
 	store *store
+	queue chan command
 }
 
 func newExecutor(store *store) *executor {
-	return &executor{
+	ex := &executor{
 		store: store,
+		queue: make(chan command, 100),
+	}
+	go ex.loop()
+
+	return ex
+}
+
+func (ex *executor) loop() {
+	for cmd := range ex.queue {
+		switch cmd.name {
+		case "PING":
+			cmd.reply <- resp.SerializeSimpleString("PONG")
+		case "ECHO":
+			if len(cmd.args) == 0 {
+				cmd.reply <- resp.SerializeSimpleError("missing argument")
+			}
+			cmd.reply <- resp.SerializeBulkString(cmd.args[0])
+		case "GET":
+			if len(cmd.args) != 1 {
+				cmd.reply <- resp.SerializeSimpleError(fmt.Sprintf(
+					"invalid number of arguments: expect 1, got %d", len(cmd.args)))
+			}
+
+			key := string(cmd.args[0])
+			val, ok := ex.store.get(key)
+			if !ok {
+				cmd.reply <- resp.NullBulkString
+			}
+
+			cmd.reply <- resp.SerializeBulkString(val)
+		case "SET":
+			setArgs, err := parseSetCmdArgs(cmd.args)
+			if err != nil {
+				cmd.reply <- resp.SerializeSimpleError(err.Error())
+			}
+
+			ex.store.set(setArgs.key, setArgs.val, setArgs.expiredAt)
+
+			cmd.reply <- resp.SerializeSimpleString("OK")
+		default:
+			cmd.reply <- resp.SerializeSimpleError(
+				fmt.Sprintf("unsupported command: %s", cmd.name))
+		}
+
+		close(cmd.reply)
 	}
 }
 
 // execute parses and runs the given command array and returns its
 // output.
-func (ex *executor) execute(cmd [][]byte) []byte {
-	if len(cmd) == 0 {
+func (ex *executor) execute(rawCmd [][]byte) []byte {
+	if len(rawCmd) == 0 {
 		return resp.SerializeSimpleError("empty command")
 	}
 
-	name := strings.ToUpper(string(cmd[0]))
-	args := cmd[1:]
-	switch name {
-	case "PING":
-		return resp.SerializeSimpleString("PONG")
-	case "ECHO":
-		if len(args) == 0 {
-			return resp.SerializeSimpleError("missing argument")
-		}
-		return resp.SerializeBulkString(args[0])
-	case "GET":
-		if len(args) != 1 {
-			return resp.SerializeSimpleError(fmt.Sprintf(
-				"invalid number of arguments: expect 1, got %d", len(args)))
-		}
+	name := strings.ToUpper(string(rawCmd[0]))
+	args := rawCmd[1:]
 
-		key := string(args[0])
-		val, ok := ex.store.get(key)
-		if !ok {
-			return resp.NullBulkString
-		}
-
-		return resp.SerializeBulkString(val)
-	case "SET":
-		setArgs, err := parseSetCmdArgs(args)
-		if err != nil {
-			return resp.SerializeSimpleError(err.Error())
-		}
-
-		ex.store.set(setArgs.key, setArgs.val, setArgs.expiredAt)
-
-		return resp.SerializeSimpleString("OK")
-	default:
-		return resp.SerializeSimpleError(fmt.Sprintf("unsupported command: %s", name))
+	cmd := command{
+		name:  name,
+		args:  args,
+		reply: make(chan []byte, 1),
 	}
+	ex.queue <- cmd
+
+	return <-cmd.reply
 }
 
 type setCmdArgs struct {

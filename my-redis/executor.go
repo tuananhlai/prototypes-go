@@ -87,6 +87,33 @@ func (ex *executor) loop() {
 			}
 
 			cmd.reply <- resp.SerializeInteger(cnt)
+		case "LRANGE":
+			if len(cmd.args) != 3 {
+				cmd.reply <- resp.SerializeSimpleError(fmt.Sprintf(
+					"invalid number of arguments: expect 3, got %d", len(cmd.args)))
+				return
+			}
+
+			key := string(cmd.args[0])
+			start, err := strconv.Atoi(string(cmd.args[1]))
+			if err != nil {
+				cmd.reply <- resp.SerializeSimpleError(err.Error())
+				return
+			}
+
+			stop, err := strconv.Atoi(string(cmd.args[2]))
+			if err != nil {
+				cmd.reply <- resp.SerializeSimpleError(err.Error())
+				return
+			}
+
+			retval, err := ex.store.lrange(key, start, stop)
+			if err != nil {
+				cmd.reply <- resp.SerializeSimpleError(err.Error())
+				return
+			}
+
+			cmd.reply <- resp.SerializeArray(retval)
 		default:
 			cmd.reply <- resp.SerializeSimpleError(
 				fmt.Sprintf("unsupported command: %s", cmd.name))

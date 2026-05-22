@@ -138,6 +138,72 @@ func (s *ComplianceTestSuite) TestRPushMultipleElements() {
 	s.Equal("5\n", string(out))
 }
 
+func (s *ComplianceTestSuite) TestLRange() {
+	cmd := exec.Command("redis-cli", "RPUSH", "list_key", "a", "b", "c", "d", "e")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("5\n", string(out))
+
+	// First 2 elements.
+	cmd = exec.Command("redis-cli", "LRANGE", "list_key", "0", "1")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("a\nb\n", string(out))
+
+	// Elements from index 2 to 4 (stop is inclusive).
+	cmd = exec.Command("redis-cli", "LRANGE", "list_key", "2", "4")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("c\nd\ne\n", string(out))
+}
+
+func (s *ComplianceTestSuite) TestLRangeNonExistentList() {
+	cmd := exec.Command("redis-cli", "LRANGE", "missing_key", "0", "1")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	// redis-cli renders an empty array (*0\r\n) as a single newline.
+	s.Equal("\n", string(out))
+}
+
+func (s *ComplianceTestSuite) TestLRangeStartBeyondEnd() {
+	cmd := exec.Command("redis-cli", "RPUSH", "list_key", "a", "b", "c")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("3\n", string(out))
+
+	// Start index >= length yields an empty array.
+	cmd = exec.Command("redis-cli", "LRANGE", "list_key", "5", "10")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("\n", string(out))
+}
+
+func (s *ComplianceTestSuite) TestLRangeStopBeyondEnd() {
+	cmd := exec.Command("redis-cli", "RPUSH", "list_key", "a", "b", "c", "d", "e")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("5\n", string(out))
+
+	// Stop index >= length is clamped to the last element.
+	cmd = exec.Command("redis-cli", "LRANGE", "list_key", "0", "10")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("a\nb\nc\nd\ne\n", string(out))
+}
+
+func (s *ComplianceTestSuite) TestLRangeStartGreaterThanStop() {
+	cmd := exec.Command("redis-cli", "RPUSH", "list_key", "a", "b", "c")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("3\n", string(out))
+
+	// Start index > stop index yields an empty array.
+	cmd = exec.Command("redis-cli", "LRANGE", "list_key", "2", "1")
+	out, err = cmd.CombinedOutput()
+	s.Require().NoError(err)
+	s.Equal("\n", string(out))
+}
+
 func (s *ComplianceTestSuite) TestSetWithExpiry() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

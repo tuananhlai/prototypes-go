@@ -146,3 +146,22 @@ func (s *store) rpush(key string, newElems [][]byte) (int, error) {
 
 	return len(updatedVal), nil
 }
+
+func (s *store) lrange(key string, start, stop int) ([][]byte, error) {
+	rawExistingVal, keyAlreadyExists := s.mp[key]
+	if !keyAlreadyExists {
+		return nil, nil
+	}
+
+	existingVal, isValueDataTypeCorrect := rawExistingVal.val.([][]byte)
+	if !isValueDataTypeCorrect {
+		return nil, fmt.Errorf("lrange %s: wrong data type for existing value", key)
+	}
+
+	if start >= len(existingVal) || start > stop {
+		return nil, nil
+	}
+
+	stop = min(stop, len(existingVal)-1)
+	return existingVal[start : stop+1], nil
+}

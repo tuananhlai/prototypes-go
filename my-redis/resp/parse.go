@@ -8,7 +8,6 @@ import (
 	"strconv"
 )
 
-
 const (
 	respTypeArray      = '*'
 	respTypeBulkString = '$'

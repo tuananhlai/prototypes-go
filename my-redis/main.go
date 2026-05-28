@@ -158,6 +158,13 @@ func (s *store) lrange(key string, start, stop int) ([][]byte, error) {
 		return nil, fmt.Errorf("lrange %s: wrong data type for existing value", key)
 	}
 
+	if start < 0 {
+		start = max(len(existingVal)+start, 0)
+	}
+	if stop < 0 {
+		stop = len(existingVal) + stop
+	}
+
 	if start >= len(existingVal) || start > stop {
 		return nil, nil
 	}
